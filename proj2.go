@@ -37,7 +37,7 @@ import (
 	// see someUsefulThings() below:
 )
 
-// This serves two purposes: 
+// This serves two purposes:
 // a) It shows you some useful primitives, and
 // b) it suppresses warnings for items not being imported.
 // Of course, this function can be deleted.
@@ -85,6 +85,15 @@ func bytesToUUID(data []byte) (ret uuid.UUID) {
 // The structure definition for a user record
 type User struct {
 	Username string
+	userlib.DSKeyGen()
+	userlib.PKEKeyGen()
+	//AESKey contains a 16/24/32 byte key for AES computations based on the Rijndael algorithm.
+	mkey AESKey //holds master key
+	//Use RandomBytes generate encryption key, HMAC key, file key
+	encryptionKey := RandomBytes(mkey.length)
+	HMACKey := userlib.RandomBytes(mkey.length)
+	fileKey := userlib.RandomBytes(mkey.length)
+
 
 	// You can add other fields here if you want...
 	// Note for JSON to marshal/unmarshal, the fields need to
@@ -104,7 +113,7 @@ type User struct {
 // keystore and the datastore functions in the userlib library.
 
 // You can assume the password has strong entropy, EXCEPT
-// the attackers may possess a precomputed tables containing 
+// the attackers may possess a precomputed tables containing
 // hashes of common passwords downloaded from the internet.
 func InitUser(username string, password string) (userdataptr *User, err error) {
 	var userdata User
@@ -112,6 +121,15 @@ func InitUser(username string, password string) (userdataptr *User, err error) {
 
 	//TODO: This is a toy implementation.
 	userdata.Username = username
+	userdata.Password = password
+
+	//checks if username already exists; if not, generate a key for HKDF then use
+	// HKDF to generate multiple keys from one key
+	masterKey := Argon2Key(password, username, 3*mkey.length)
+	keyX := userlib.HashKDF(masterKey, []byte("encryption"))[:16]
+	keyY := userlib.HashKDF(masterKey, []byte("hmac1"))[:16]
+	keyZ := userlib.HashKDF(masterKey, []byte("hmac2"))[:16]
+
 	//End of toy implementation
 
 	return &userdata, nil
@@ -129,7 +147,7 @@ func GetUser(username string, password string) (userdataptr *User, err error) {
 
 // This stores a file in the datastore.
 //
-// The plaintext of the filename + the plaintext and length of the filename 
+// The plaintext of the filename + the plaintext and length of the filename
 // should NOT be revealed to the datastore!
 func (userdata *User) StoreFile(filename string, data []byte) {
 
