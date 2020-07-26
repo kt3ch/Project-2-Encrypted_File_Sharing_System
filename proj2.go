@@ -144,7 +144,7 @@ func InitUser(username string, password string) (userdataptr *User, err error) {
 
 //	This generates all keys user will use from username and password.
 func generateKeys(username string, password string) ([]byte, []byte, userlib.PKEEncKey, userlib.PKEDecKey, []byte, []byte, []byte) {
-	masterKey := Argon2Key(password, username, 3*userlib.AESKeySize)
+	masterKey := userlib.Argon2Key([]byte(password), []byte(username), uint32(userlib.AESKeySize))
 	lk, _ := userlib.HashKDF(masterKey, []byte("StructLocation"))
 	ek, dk, _ := userlib.PKEKeyGen()
 	symkey := userlib.RandomBytes(userlib.AESKeySize)
