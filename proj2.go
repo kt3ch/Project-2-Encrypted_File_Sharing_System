@@ -91,18 +91,16 @@ type User struct {
 	StructLocation []byte //HashKDF()
 
 	//Public Encryption Key pair, probably used for send and receive files.
-	PrivateKey userlib.PKEDecKey //PKEKeyGen() userlib.PKEKeyGen()
-	PublicKey  userlib.PKEEncKey //PKEKeyGen() userlib.PKEKEYGen
+	PrivateDecKey userlib.PKEDecKey //PKEKeyGen() userlib.PKEKeyGen()
 
-	//Digital Signature used to sign sent message
-	DigitalSignature userlib.DSSignKey //DSKeyGen() userlib.DSKeyGen()
+	//Private Signature used to sign sent message
+	PrivateSignature userlib.DSSignKey //DSKeyGen() userlib.DSKeyGen()
 
 	//Use RandomBytes generate symmetric key, HMAC key, file key
 	EncryptionKey []byte //RandomBytes(mkey.length) Symmetric Encryption Key
 	HMACKey_1     []byte //userlib.RandomBytes(mkey.length)
 	HMACKey_2     []byte //userlib.RandomBytes(mkey.length)
 	FileKey       []byte //userlib.RandomBytes(mkey.length)
-
 	// You can add other fields here if you want...
 	// Note for JSON to marshal/unmarshal, the fields need to
 	// be public (start with a capital letter)
@@ -130,12 +128,35 @@ func InitUser(username string, password string) (userdataptr *User, err error) {
 	userdata.Username = username
 	//userdata.Password = password
 
-	//checks if username already exists; if not, generate a key for HKDF then use
+	//checks if username already exists; if not, generate keys
 	_, used := userlib.KeystoreGet(username + "_username")
 	if used {
 		return nil, errors.New("username duplicated")
 	}
-	// HKDF to generate multiple keys from one key
+	else {
+		//master key (pbkd)
+		masterKey := userlib.Argon2Key([]byte(password), []byte(username), uint32(userlib.AESKeySize))
+		User.MasterKey = masterkey
+		//location key (hkdf) for storing the User Struct in Datastore
+		lk, _ := userlib.HashKDF(masterKey, []byte("StructLocation"))
+		User.StructLocation = lk
+		//PKE key pair, generate private decryption key and public encryption key
+		ek, dk, _ := userlib.PKEKeyGen()
+		KeyStoreset(username, ek)
+		User.PrivateDecKey = dk
+		//digital signature key pair, generate private signature key and public signature key
+		privateSign, publicSign, _ := userlib.DSKeyGen()
+		KeyStoreset(username, publicSign)
+		User.PrivateDecKey = privateSign
+		//symmetric key
+		symkey := userlib.RandomBytes(userlib.AESKeySize)
+		//HMAC key
+		hmk1 := userlib.RandomBytes(userlib.AESKeySize)
+		hmk2 := userlib.RandomBytes(userlib.AESKeySize)
+		//store User struct in Datastore
+		DatastoreSet(uuid, userlib.HMACEval(User))
+
+	}
 
 	//End of toy implementation
 
@@ -143,15 +164,24 @@ func InitUser(username string, password string) (userdataptr *User, err error) {
 }
 
 //	This generates all keys user will use from username and password.
-func generateKeys(username string, password string) ([]byte, []byte, userlib.PKEEncKey, userlib.PKEDecKey, []byte, []byte, []byte) {
-	masterKey := userlib.Argon2Key([]byte(password), []byte(username), uint32(userlib.AESKeySize))
-	lk, _ := userlib.HashKDF(masterKey, []byte("StructLocation"))
-	ek, dk, _ := userlib.PKEKeyGen()
-	symkey := userlib.RandomBytes(userlib.AESKeySize)
-	hmk1 := userlib.RandomBytes(userlib.AESKeySize)
-	hmk2 := userlib.RandomBytes(userlib.AESKeySize)
-	return masterKey, lk, ek, dk, symkey, hmk1, hmk2
-}
+// func generateKeys(userdata User, username string, password string) ([]byte, []byte, userlib.PKEEncKey, userlib.PKEDecKey, []byte, []byte, []byte) {
+// 	masterKey := userlib.Argon2Key([]byte(password), []byte(username), uint32(userlib.AESKeySize)) //pbkd to generate masterkey
+// 	lk, _ := userlib.HashKDF(masterKey, []byte("StructLocation"))
+// 	//generate private decryption key and public encryption key
+// 	ek, dk, _ := userlib.PKEKeyGen()
+// 	KeyStoreset(username, ek)
+// 	User.PrivateKey = dk
+// 	//generate private signature key and public signature key
+// 	privateSign, publicSign, _ := userlib.DSKeyGen()
+// 	KeyStoreset(username, publicSign)
+// 	User.PrivateKey = privateSign
+// 	symkey := userlib.RandomBytes(userlib.AESKeySize)
+// 	hmk1 := userlib.RandomBytes(userlib.AESKeySize)
+// 	hmk2 := userlib.RandomBytes(userlib.AESKeySize)
+// 	return masterKey, lk, ek, dk, symkey, hmk1, hmk2
+// }
+
+
 
 // This fetches the user information from the Datastore.  It should
 // fail with an error if the user/password is invalid, or if the user
@@ -159,8 +189,19 @@ func generateKeys(username string, password string) ([]byte, []byte, userlib.PKE
 func GetUser(username string, password string) (userdataptr *User, err error) {
 	var userdata User
 	userdataptr = &userdata
-
-	return userdataptr, nil
+	//return value from KeyStore
+	pk, ok := userlib.KeystoreGet(username)
+	//check if username exists and that user data isn't corrupt
+	if pk {
+		pswdKey := userlib.Argon2Key(password, username, userlib.AESKeySize)
+		//check that password matches username
+		if pswdKey == User.MasterKey {
+			return userdataptr, nil
+		}
+	}
+	else {
+		return nil, errors.New("invalid user credentials or corrupt user data")
+	}
 }
 
 // This stores a file in the datastore.
