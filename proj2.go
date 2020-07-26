@@ -21,7 +21,7 @@ import (
 	// so lets make life easier and use those too...
 	//
 	// You need to add with "go get github.com/google/uuid"
-	"github.com/google/uuid"
+	. "github.com/google/uuid"
 
 	// Useful for debug messages, or string manipulation for datastore keys.
 	"strings"
@@ -42,7 +42,7 @@ import (
 // Of course, this function can be deleted.
 func someUsefulThings() {
 	// Creates a random UUID
-	f := uuid.New()
+	f := New()
 	userlib.DebugMsg("UUID as string:%v", f.String())
 
 	// Example of writing over a byte of f
@@ -57,7 +57,7 @@ func someUsefulThings() {
 	// Will actually work with go structures as well
 	d, _ := json.Marshal(f)
 	userlib.DebugMsg("The json data: %v", string(d))
-	var g uuid.UUID
+	var g UUID
 	json.Unmarshal(d, &g)
 	userlib.DebugMsg("Unmashaled data %v", g.String())
 
@@ -74,7 +74,7 @@ func someUsefulThings() {
 
 // Helper function: Takes the first 16 bytes and
 // converts it into the UUID type
-func bytesToUUID(data []byte) (ret uuid.UUID) {
+func bytesToUUID(data []byte) (ret UUID) {
 	for x := range ret {
 		ret[x] = data[x]
 	}
@@ -90,6 +90,9 @@ type User struct {
 	//Struct Location Key, location to store and retrive this struct
 	StructLocation []byte //HashKDF()
 
+	//Struct uuid, used for struct authentication
+	UUID UUID
+
 	//Public Encryption Key pair, probably used for send and receive files.
 	PrivateDecKey userlib.PKEDecKey //PKEKeyGen() userlib.PKEKeyGen()
 
@@ -98,9 +101,9 @@ type User struct {
 
 	//Use RandomBytes generate symmetric key, HMAC key, file key
 	EncryptKey []byte //RandomBytes(mkey.length) Symmetric Encryption Key
-	HMACKey_1     []byte //userlib.RandomBytes(mkey.length)
-	HMACKey_2     []byte //userlib.RandomBytes(mkey.length)
-	FileKey       []byte //userlib.RandomBytes(mkey.length)
+	HMACKey_1  []byte //userlib.RandomBytes(mkey.length)
+	HMACKey_2  []byte //userlib.RandomBytes(mkey.length)
+	FileKey    []byte //userlib.RandomBytes(mkey.length)
 	// You can add other fields here if you want...
 	// Note for JSON to marshal/unmarshal, the fields need to
 	// be public (start with a capital letter)
@@ -132,38 +135,59 @@ func InitUser(username string, password string) (userdataptr *User, err error) {
 	_, used := userlib.KeystoreGet(username + "_username")
 	if used {
 		return nil, errors.New("username duplicated")
-	}
-	else {
+	} else {
+
 		//master key (pbkd)
 		masterKey := userlib.Argon2Key([]byte(password), []byte(username), uint32(userlib.AESKeySize))
-		userdata.MasterKey = masterkey
+		userdata.MasterKey = masterKey
+
 		//location key (hkdf) for storing the User Struct in Datastore
 		lk, _ := userlib.HashKDF(masterKey, []byte("StructLocation"))
 		userdata.StructLocation = lk
+
 		//PKE key pair, generate private decryption key and public encryption key
 		ek, dk, _ := userlib.PKEKeyGen()
-		KeyStoreset(username, ek)
+		userlib.KeystoreSet(username, ek)
 		userdata.PrivateDecKey = dk
+
 		//digital signature key pair, generate private signature key and public signature key
 		privateSign, publicSign, _ := userlib.DSKeyGen()
-		KeyStoreset(username, publicSign)
+		userlib.KeystoreSet(username, publicSign)
 		userdata.PrivateSignKey = privateSign
+
 		//symmetric key
 		symkey := userlib.RandomBytes(userlib.AESKeySize)
+		userdata.EncryptKey = symkey
+
 		//HMAC key
 		hmac1 := userlib.RandomBytes(userlib.AESKeySize)
 		hmac2 := userlib.RandomBytes(userlib.AESKeySize)
+		userdata.HMACKey_1 = hmac1
+		userdata.HMACKey_2 = hmac2
+
+		//UserStruct Location Key
+		lockey, _ := userlib.HashKDF(masterKey, []byte("Location"))
+		userdata.StructLocation = lockey
+
+		//UserStruct UUID
+		suuid := New()
+		userdata.UUID = suuid
 
 		//marshal to json
 		userdataMarshaled, _ := json.Marshal(userdata)
-		//encrypt userdata (using CFBEncrypt)
-		userdataEncrypted := Encrypt(userdata.EncryptKey, userdataMarshaled)
+
+		//encrypt userdata (using CFBEncrypt) and derive key and IV using HKDF
+		userEncryptKey, _ := userlib.HashKDF(masterKey, []byte("StructEncryptKey"))
+		userEncryptIV, _ := userlib.HashKDF(masterKey, []byte("StructEncryptIV"))
+		userdataEncrypted := userlib.SymEnc(userEncryptKey, userEncryptIV, userdataMarshaled)
+
 		//generate HMAC
-		HMACTag := userlib.HMACEval(userdata.HMACKey, userdataEncrypted)
+		HMACTag, _ := userlib.HMACEval(userdata.HMACKey_1, userdataEncrypted)
+
 		//append HMAC tag to the end of the encrypted userdata
-		userdataHMACed := append(userdataEncrypted, HMACTag)
-		//store encrypted and MAC'd User struct in Datastore
-		DatastoreSet(uuid, userdataHMACed)
+		userdataHMACed := append(userdataEncrypted, HMACTag...)
+
+		userlib.DatastoreSet(suuid, userdataHMACed)
 
 	}
 
@@ -190,8 +214,6 @@ func InitUser(username string, password string) (userdataptr *User, err error) {
 // 	return masterKey, lk, ek, dk, symkey, hmk1, hmk2
 // }
 
-
-
 // This fetches the user information from the Datastore.  It should
 // fail with an error if the user/password is invalid, or if the user
 // data was corrupted, or if the user can't be found.
@@ -207,8 +229,7 @@ func GetUser(username string, password string) (userdataptr *User, err error) {
 		if pswdKey == User.MasterKey {
 			return userdataptr, nil
 		}
-	}
-	else {
+	} else {
 		return nil, errors.New("invalid user credentials or corrupt user data")
 	}
 }
@@ -220,7 +241,7 @@ func GetUser(username string, password string) (userdataptr *User, err error) {
 func (userdata *User) StoreFile(filename string, data []byte) {
 
 	//TODO: This is a toy implementation.
-	UUID, _ := uuid.FromBytes([]byte(filename + userdata.Username)[:16])
+	UUID, _ := FromBytes([]byte(filename + userdata.Username)[:16])
 	packaged_data, _ := json.Marshal(data)
 	userlib.DatastoreSet(UUID, packaged_data)
 	//End of toy implementation
@@ -249,7 +270,7 @@ func (userdata *User) AppendFile(filename string, data []byte) (err error) {
 func (userdata *User) LoadFile(filename string) (data []byte, err error) {
 
 	//TODO: This is a toy implementation.
-	UUID, _ := uuid.FromBytes([]byte(filename + userdata.Username)[:16])
+	UUID, _ := FromBytes([]byte(filename + userdata.Username)[:16])
 	packaged_data, ok := userlib.DatastoreGet(UUID)
 	if !ok {
 		return nil, errors.New(strings.ToTitle("File not found!"))
