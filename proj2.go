@@ -32,7 +32,6 @@ import (
 	// Optional. You can remove the "_" there, but please do not touch
 	// anything else within the import bracket.
 	_ "strconv"
-
 	// if you are looking for fmt, we don't give you fmt, but you can use userlib.DebugMsg.
 	// see someUsefulThings() below:
 )
@@ -68,7 +67,7 @@ func someUsefulThings() {
 	// And a random RSA key.  In this case, ignoring the error
 	// return value
 	var pk userlib.PKEEncKey
-        var sk userlib.PKEDecKey
+	var sk userlib.PKEDecKey
 	pk, sk, _ = userlib.PKEKeyGen()
 	userlib.DebugMsg("Key is %v, %v", pk, sk)
 }
@@ -85,15 +84,24 @@ func bytesToUUID(data []byte) (ret uuid.UUID) {
 // The structure definition for a user record
 type User struct {
 	Username string
-	userlib.DSKeyGen()
-	userlib.PKEKeyGen()
-	//AESKey contains a 16/24/32 byte key for AES computations based on the Rijndael algorithm.
-	mkey AESKey //holds master key
-	//Use RandomBytes generate encryption key, HMAC key, file key
-	encryptionKey := RandomBytes(mkey.length)
-	HMACKey := userlib.RandomBytes(mkey.length)
-	fileKey := userlib.RandomBytes(mkey.length)
 
+	MasterKey []byte //holds master key
+
+	//Struct Location Key, location to store and retrive this struct
+	StructLocation []byte //HashKDF()
+
+	//Public Encryption Key pair, probably used for send and receive files.
+	PrivateKey userlib.PKEDecKey //PKEKeyGen() userlib.PKEKeyGen()
+	PublicKey  userlib.PKEEncKey //PKEKeyGen() userlib.PKEKEYGen
+
+	//Digital Signature used to sign sent message
+	DigitalSignature userlib.DSSignKey //DSKeyGen() userlib.DSKeyGen()
+
+	//Use RandomBytes generate symmetric key, HMAC key, file key
+	EncryptionKey []byte //RandomBytes(mkey.length) Symmetric Encryption Key
+	HMACKey_1     []byte //userlib.RandomBytes(mkey.length)
+	HMACKey_2     []byte //userlib.RandomBytes(mkey.length)
+	FileKey       []byte //userlib.RandomBytes(mkey.length)
 
 	// You can add other fields here if you want...
 	// Note for JSON to marshal/unmarshal, the fields need to
@@ -119,20 +127,30 @@ func InitUser(username string, password string) (userdataptr *User, err error) {
 	var userdata User
 	userdataptr = &userdata
 
-	//TODO: This is a toy implementation.
 	userdata.Username = username
-	userdata.Password = password
+	//userdata.Password = password
 
 	//checks if username already exists; if not, generate a key for HKDF then use
+	_, used := userlib.KeystoreGet(username + "_username")
+	if used {
+		return nil, errors.New("username duplicated")
+	}
 	// HKDF to generate multiple keys from one key
-	masterKey := Argon2Key(password, username, 3*mkey.length)
-	keyX := userlib.HashKDF(masterKey, []byte("encryption"))[:16]
-	keyY := userlib.HashKDF(masterKey, []byte("hmac1"))[:16]
-	keyZ := userlib.HashKDF(masterKey, []byte("hmac2"))[:16]
 
 	//End of toy implementation
 
 	return &userdata, nil
+}
+
+//	This generates all keys user will use from username and password.
+func generateKeys(username string, password string) ([]byte, []byte, userlib.PKEEncKey, userlib.PKEDecKey, []byte, []byte, []byte) {
+	masterKey := Argon2Key(password, username, 3*userlib.AESKeySize)
+	lk, _ := userlib.HashKDF(masterKey, []byte("StructLocation"))
+	ek, dk, _ := userlib.PKEKeyGen()
+	symkey := userlib.RandomBytes(userlib.AESKeySize)
+	hmk1 := userlib.RandomBytes(userlib.AESKeySize)
+	hmk2 := userlib.RandomBytes(userlib.AESKeySize)
+	return masterKey, lk, ek, dk, symkey, hmk1, hmk2
 }
 
 // This fetches the user information from the Datastore.  It should
