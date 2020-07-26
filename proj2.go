@@ -85,8 +85,6 @@ func bytesToUUID(data []byte) (ret uuid.UUID) {
 // The structure definition for a user record
 type User struct {
 	Username string
-	userlib.DSKeyGen()
-	userlib.PKEKeyGen()
 	//AESKey contains a 16/24/32 byte key for AES computations based on the Rijndael algorithm.
 	mkey AESKey //holds master key
 	//Use RandomBytes generate encryption key, HMAC key, file key
@@ -130,6 +128,16 @@ func InitUser(username string, password string) (userdataptr *User, err error) {
 	keyY := userlib.HashKDF(masterKey, []byte("hmac1"))[:16]
 	keyZ := userlib.HashKDF(masterKey, []byte("hmac2"))[:16]
 
+	//generates a key pair for public-key encryption via RSA
+	PKEEncKey, PKEDecKey = userlib.PKEKeyGen()
+	keystoreSet(username, PKEEncKey)
+	User.privateDecKey = PKEDecKey
+	//generates a key pair for digital signature via RSA
+	DSSignKey, DSVerifyKey = userlib.DSKeyGen()
+	keystoreSet(username, DSSignKey)
+	User.privateSignKey = DSVerifyKey
+
+	
 	//End of toy implementation
 
 	return &userdata, nil
