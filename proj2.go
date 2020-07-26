@@ -94,10 +94,10 @@ type User struct {
 	PrivateDecKey userlib.PKEDecKey //PKEKeyGen() userlib.PKEKeyGen()
 
 	//Private Signature used to sign sent message
-	PrivateSignature userlib.DSSignKey //DSKeyGen() userlib.DSKeyGen()
+	PrivateSignKey userlib.DSSignKey //DSKeyGen() userlib.DSKeyGen()
 
 	//Use RandomBytes generate symmetric key, HMAC key, file key
-	EncryptionKey []byte //RandomBytes(mkey.length) Symmetric Encryption Key
+	EncryptKey []byte //RandomBytes(mkey.length) Symmetric Encryption Key
 	HMACKey_1     []byte //userlib.RandomBytes(mkey.length)
 	HMACKey_2     []byte //userlib.RandomBytes(mkey.length)
 	FileKey       []byte //userlib.RandomBytes(mkey.length)
@@ -136,25 +136,34 @@ func InitUser(username string, password string) (userdataptr *User, err error) {
 	else {
 		//master key (pbkd)
 		masterKey := userlib.Argon2Key([]byte(password), []byte(username), uint32(userlib.AESKeySize))
-		User.MasterKey = masterkey
+		userdata.MasterKey = masterkey
 		//location key (hkdf) for storing the User Struct in Datastore
 		lk, _ := userlib.HashKDF(masterKey, []byte("StructLocation"))
-		User.StructLocation = lk
+		userdata.StructLocation = lk
 		//PKE key pair, generate private decryption key and public encryption key
 		ek, dk, _ := userlib.PKEKeyGen()
 		KeyStoreset(username, ek)
-		User.PrivateDecKey = dk
+		userdata.PrivateDecKey = dk
 		//digital signature key pair, generate private signature key and public signature key
 		privateSign, publicSign, _ := userlib.DSKeyGen()
 		KeyStoreset(username, publicSign)
-		User.PrivateDecKey = privateSign
+		userdata.PrivateSignKey = privateSign
 		//symmetric key
 		symkey := userlib.RandomBytes(userlib.AESKeySize)
 		//HMAC key
-		hmk1 := userlib.RandomBytes(userlib.AESKeySize)
-		hmk2 := userlib.RandomBytes(userlib.AESKeySize)
-		//store User struct in Datastore
-		DatastoreSet(uuid, userlib.HMACEval(User))
+		hmac1 := userlib.RandomBytes(userlib.AESKeySize)
+		hmac2 := userlib.RandomBytes(userlib.AESKeySize)
+
+		//marshal to json
+		userdataMarshaled, _ := json.Marshal(userdata)
+		//encrypt userdata (using CFBEncrypt)
+		userdataEncrypted := Encrypt(userdata.EncryptKey, userdataMarshaled)
+		//generate HMAC
+		HMACTag := userlib.HMACEval(userdata.HMACKey, userdataEncrypted)
+		//append HMAC tag to the end of the encrypted userdata
+		userdataHMACed := append(userdataEncrypted, HMACTag)
+		//store encrypted and MAC'd User struct in Datastore
+		DatastoreSet(uuid, userdataHMACed)
 
 	}
 
@@ -217,6 +226,12 @@ func (userdata *User) StoreFile(filename string, data []byte) {
 	//End of toy implementation
 
 	return
+}
+
+//for each file
+type FileHeader struct {
+	EncryptKey
+	HMAC key
 }
 
 // This adds on to an existing file.
