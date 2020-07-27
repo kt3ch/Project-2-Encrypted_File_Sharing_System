@@ -101,11 +101,30 @@ type User struct {
 
 	//Use RandomBytes generate symmetric key, HMAC key, file key
 	EncryptKey []byte
-	HMACKey  []byte //userlib.RandomBytes(mkey.length)
+	HMACKey    []byte //userlib.RandomBytes(mkey.length)
 
 	// You can add other fields here if you want...
 	// Note for JSON to marshal/unmarshal, the fields need to
 	// be public (start with a capital letter)
+}
+
+type FileHeader struct {
+	EncryptKey []byte //RandomBytes(mkey.length) Symmetric Encryption Key
+	// Used to encrypt each file node
+	HMACKey []byte //userlib.RandomBytes(mkey.length)
+
+}
+type FileNode struct {
+	Data  []byte //symmetrically encrypted data
+	Fuuid UUID
+}
+
+type Guardian struct {
+	UUID           UUID
+	EncryptKey     []byte
+	HMACKey        []byte
+	Owner          string
+	AccessibleUser []string
 }
 
 // This creates a user.  It will only be called once for a user
@@ -238,9 +257,9 @@ func GetUser(username string, password string) (userdataptr *User, err error) {
 func (userdata *User) StoreFile(filename string, data []byte) {
 	var guardian Guardian
 	//TODO: This is a toy implementation.
-	UUID, _ := FromBytes([]byte(filename + userdata.Username)[:16])
-	packaged_data, _ := json.Marshal(data)
-	userlib.DatastoreSet(UUID, packaged_data)
+	//UUID, _ := FromBytes([]byte(filename + userdata.Username)[:16])
+	//packaged_data, _ := json.Marshal(data)
+	//userlib.DatastoreSet(UUID, packaged_data)
 
 	newUUID := uuid.new()
 	fileHeader.UUID = newUUID
@@ -248,7 +267,7 @@ func (userdata *User) StoreFile(filename string, data []byte) {
 	//encrypt and MAC file
 	fileEncryptKey := userlib.RandomBytes(userlib.AESKeySize)
 	fileHMACKey := userlib.RandomBytes(userlib.AESKeySize)
-	fileEncryptIV, _ := userlib.RandomBytes(userlib.AESBlockSize)
+	fileEncryptIV := userlib.RandomBytes(userlib.AESBlockSize)
 	fileEncrypted := userlib.SymEnc(fileEncryptKey, fileEncryptIV, data) //symmetric encryption
 	HMACTag, _ := userlib.HMACEval(userdata.HMACKey, fileEncrypted)
 	userdataHMACed := append(fileEncrypted, HMACTag...)
@@ -260,12 +279,13 @@ func (userdata *User) StoreFile(filename string, data []byte) {
 	return
 }
 
-type Guardian struct {
-	UUID UUID
-	EncryptKey []byte
-	HMACKey  []byte
-}
-
+//type Guardian struct {
+//	UUID           UUID
+//	EncryptKey     []byte
+//	HMACKey        []byte
+//	Owner          string
+//	AccessibleUser []string
+//}
 
 // This adds on to an existing file.
 //
