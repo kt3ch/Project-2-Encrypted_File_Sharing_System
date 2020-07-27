@@ -101,7 +101,7 @@ type User struct {
 
 	//Use RandomBytes generate symmetric key, HMAC key, file key
 	EncryptKey []byte
-	HMACKey  []byte //userlib.RandomBytes(mkey.length)
+	HMACKey    []byte //userlib.RandomBytes(mkey.length)
 
 	// You can add other fields here if you want...
 	// Note for JSON to marshal/unmarshal, the fields need to
@@ -248,7 +248,7 @@ func (userdata *User) StoreFile(filename string, data []byte) {
 	//encrypt and MAC file
 	fileEncryptKey := userlib.RandomBytes(userlib.AESKeySize)
 	fileHMACKey := userlib.RandomBytes(userlib.AESKeySize)
-	fileEncryptIV, _ := userlib.RandomBytes(userlib.AESBlockSize)
+	fileEncryptIV := userlib.RandomBytes(userlib.AESBlockSize)
 	fileEncrypted := userlib.SymEnc(fileEncryptKey, fileEncryptIV, data) //symmetric encryption
 	HMACTag, _ := userlib.HMACEval(userdata.HMACKey, fileEncrypted)
 	userdataHMACed := append(fileEncrypted, HMACTag...)
@@ -261,11 +261,12 @@ func (userdata *User) StoreFile(filename string, data []byte) {
 }
 
 type Guardian struct {
-	UUID UUID
-	EncryptKey []byte
-	HMACKey  []byte
+	UUID           UUID
+	EncryptKey     []byte
+	HMACKey        []byte
+	Owner          string
+	AccessibleUser []string
 }
-
 
 // This adds on to an existing file.
 //
