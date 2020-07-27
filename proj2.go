@@ -91,7 +91,7 @@ type User struct {
 	StructLocation []byte //HashKDF()
 
 	//Struct uuid, used for struct authentication
-	UUID UUID
+	UserUUID UUID
 
 	//Public Encryption Key pair, probably used for send and receive files.
 	PrivateDecKey userlib.PKEDecKey //PKEKeyGen() userlib.PKEKeyGen()
@@ -101,12 +101,27 @@ type User struct {
 
 	//Use RandomBytes generate symmetric key, HMAC key, file key
 	EncryptKey []byte
-	EncryptIV
-	HMACKey []byte //userlib.RandomBytes(mkey.length)
+	EncryptIV  []byte
+	HMACKey    []byte //userlib.RandomBytes(mkey.length)
 
 	// You can add other fields here if you want...
 	// Note for JSON to marshal/unmarshal, the fields need to
 	// be public (start with a capital letter)
+
+	//Key and HMAc used to encrypt and verify Accessible List
+	AccessibleUUID       UUID   //uuid of accessible list
+	AccessibleEncryptKey []byte //Key used to encrypt Accessible List
+	AccessibleHMAC       []byte //HMAc used to verify Accessible List
+}
+
+type Pair struct {
+	FileUUID UUID
+	SymKey   []byte
+}
+
+type AccessibleList struct {
+	Owned  map[string]Pair
+	Shared map[string]Pair
 }
 
 type FileHeader struct {
@@ -283,6 +298,11 @@ func (userdata *User) StoreFile(filename string, data []byte) {
 	var guardian Guardian
 	newUUID = New()
 	guardian.GuardianUUID = newUUID
+	guardian.FileHeaderUUID = fileHeader.FileHeaderUUID
+
+	//Assign ownername
+	guardian.Owner = userdata.Username
+	guardian.AccessibleUser = append(guardian.AccessibleUser, userdata.Username)
 
 	//initialize keys nad mac for encrypt file header
 	fileHeaderEncryptKey := userlib.RandomBytes(userlib.AESKeySize)
@@ -392,13 +412,13 @@ func (userdata *User) AppendFile(filename string, data []byte) (err error) {
 func (userdata *User) LoadFile(filename string) (data []byte, err error) {
 
 	//TODO: This is a toy implementation.
-	UUID, _ := FromBytes([]byte(filename + userdata.Username)[:16])
-	packaged_data, ok := userlib.DatastoreGet(UUID)
-	if !ok {
-		return nil, errors.New(strings.ToTitle("File not found!"))
-	}
-	json.Unmarshal(packaged_data, &data)
-	return data, nil
+	//UUID, _ := FromBytes([]byte(filename + userdata.Username)[:16])
+	//packaged_data, ok := userlib.DatastoreGet(UUID)
+	//if !ok {
+	//	return nil, errors.New(strings.ToTitle("File not found!"))
+	//}
+	//json.Unmarshal(packaged_data, &data)
+	//return data, nil
 	//End of toy implementation
 
 	return
