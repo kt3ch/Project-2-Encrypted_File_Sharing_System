@@ -108,6 +108,25 @@ type User struct {
 	// be public (start with a capital letter)
 }
 
+type FileHeader struct {
+	EncryptKey []byte //RandomBytes(mkey.length) Symmetric Encryption Key
+	// Used to encrypt each file node
+	HMACKey []byte //userlib.RandomBytes(mkey.length)
+
+}
+type FileNode struct {
+	Data  []byte //symmetrically encrypted data
+	Fuuid UUID
+}
+
+type Guardian struct {
+	UUID           UUID
+	EncryptKey     []byte
+	HMACKey        []byte
+	Owner          string
+	AccessibleUser []string
+}
+
 // This creates a user.  It will only be called once for a user
 // (unless the keystore and datastore are cleared during testing purposes)
 
@@ -238,9 +257,9 @@ func GetUser(username string, password string) (userdataptr *User, err error) {
 func (userdata *User) StoreFile(filename string, data []byte) {
 	var guardian Guardian
 	//TODO: This is a toy implementation.
-	UUID, _ := FromBytes([]byte(filename + userdata.Username)[:16])
-	packaged_data, _ := json.Marshal(data)
-	userlib.DatastoreSet(UUID, packaged_data)
+	//UUID, _ := FromBytes([]byte(filename + userdata.Username)[:16])
+	//packaged_data, _ := json.Marshal(data)
+	//userlib.DatastoreSet(UUID, packaged_data)
 
 	newUUID := uuid.new()
 	fileHeader.UUID = newUUID
@@ -260,13 +279,13 @@ func (userdata *User) StoreFile(filename string, data []byte) {
 	return
 }
 
-type Guardian struct {
-	UUID           UUID
-	EncryptKey     []byte
-	HMACKey        []byte
-	Owner          string
-	AccessibleUser []string
-}
+//type Guardian struct {
+//	UUID           UUID
+//	EncryptKey     []byte
+//	HMACKey        []byte
+//	Owner          string
+//	AccessibleUser []string
+//}
 
 // This adds on to an existing file.
 //
