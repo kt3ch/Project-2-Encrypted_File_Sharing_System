@@ -100,10 +100,9 @@ type User struct {
 	PrivateSignKey userlib.DSSignKey //DSKeyGen() userlib.DSKeyGen()
 
 	//Use RandomBytes generate symmetric key, HMAC key, file key
-	EncryptKey []byte //RandomBytes(mkey.length) Symmetric Encryption Key
+	EncryptKey []byte
 	HMACKey  []byte //userlib.RandomBytes(mkey.length)
-	// HMACKey_2  []byte //userlib.RandomBytes(mkey.length)
-	FileKey    []byte //userlib.RandomBytes(mkey.length)
+
 	// You can add other fields here if you want...
 	// Note for JSON to marshal/unmarshal, the fields need to
 	// be public (start with a capital letter)
@@ -154,10 +153,6 @@ func InitUser(username string, password string) (userdataptr *User, err error) {
 		privateSign, publicSign, _ := userlib.DSKeyGen()
 		userlib.KeystoreSet(username, publicSign)
 		userdata.PrivateSignKey = privateSign
-
-		//symmetric key
-		symkey := userlib.RandomBytes(userlib.AESKeySize)
-		userdata.EncryptKey = symkey
 
 		//HMAC key
 		hmac := userlib.RandomBytes(userlib.AESKeySize)
@@ -241,21 +236,36 @@ func GetUser(username string, password string) (userdataptr *User, err error) {
 // The plaintext of the filename + the plaintext and length of the filename
 // should NOT be revealed to the datastore!
 func (userdata *User) StoreFile(filename string, data []byte) {
-
+	var guardian Guardian
 	//TODO: This is a toy implementation.
 	UUID, _ := FromBytes([]byte(filename + userdata.Username)[:16])
 	packaged_data, _ := json.Marshal(data)
 	userlib.DatastoreSet(UUID, packaged_data)
+
+	newUUID := uuid.new()
+	fileHeader.UUID = newUUID
+
+	//encrypt and MAC file
+	fileEncryptKey := userlib.RandomBytes(userlib.AESKeySize)
+	fileHMACKey := userlib.RandomBytes(userlib.AESKeySize)
+	fileEncryptIV, _ := userlib.RandomBytes(userlib.AESBlockSize)
+	fileEncrypted := userlib.SymEnc(fileEncryptKey, fileEncryptIV, data) //symmetric encryption
+	HMACTag, _ := userlib.HMACEval(userdata.HMACKey, fileEncrypted)
+	userdataHMACed := append(fileEncrypted, HMACTag...)
+	//map uuid to encrypted and MAC'd file
+
+	// userlib.DatastoreSet(newUUID, userdataHMACed)
 	//End of toy implementation
 
 	return
 }
 
-//for each file
-type FileHeader struct {
-	EncryptKey
-	HMAC key
+type Guardian struct {
+	UUID UUID
+	EncryptKey []byte
+	HMACKey  []byte
 }
+
 
 // This adds on to an existing file.
 //
@@ -263,6 +273,12 @@ type FileHeader struct {
 // existing file, but only whatever additional information and
 // metadata you need.
 func (userdata *User) AppendFile(filename string, data []byte) (err error) {
+	//retrieve file content
+	//compare HMACs to check for integrity
+	//decrypt file content
+	//update file structure
+	//marshal file struct, encrypt, hmac, and store in Datastore
+
 	return
 }
 
