@@ -149,7 +149,7 @@ type Guardian struct {
 	EncryptIV      []byte   //used encrypting the FileHeader
 	HMACKey        []byte   // Used to verify the FileHeader
 	Owner          string   //Only Owner can perform sharing
-	AccessibleUser []string //Users that are allowed to access this file
+	AllowedUser    []string //Users that are allowed to access this file
 }
 
 // This creates a user.  It will only be called once for a user
@@ -302,7 +302,7 @@ func (userdata *User) StoreFile(filename string, data []byte) {
 
 	//Assign ownername
 	guardian.Owner = userdata.Username
-	guardian.AccessibleUser = append(guardian.AccessibleUser, userdata.Username)
+	guardian.AllowedUser = append(guardian.AllowedUser, userdata.Username)
 
 	//initialize keys nad mac for encrypt file header
 	fileHeaderEncryptKey := userlib.RandomBytes(userlib.AESKeySize)
