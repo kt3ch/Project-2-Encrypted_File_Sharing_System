@@ -202,7 +202,7 @@ func InitUser(username string, password string) (userdataptr *User, err error) {
 		userdata.PrivateSignKey = privateSign
 
 		//HMAC key
-		hmac := userlib.RandomBytes(userlib.AESKeySize)
+		hmac := userlib.Argon2Key([]byte(password), []byte(username), uint32(userlib.HashSize))
 		userdata.HMACKey = hmac
 
 		//UserStruct Location Key
@@ -259,17 +259,17 @@ func GetUser(username string, password string) (userdataptr *User, err error) {
 		return nil, errors.New("Invalid user")
 	}
 	//pbkd to generate key from password and username, see if it's stored in Datastore
-	dsKey := userlib.Argon2Key([]byte(password), []byte(username), uint32(len(username)))
-	userEncryptKey, _ := userlib.HashKDF(userdata.MasterKey, []byte("StructEncryptKey"))
+	masterKey := userlib.Argon2Key([]byte(password), []byte(username), uint32(len(username)))
+	userEncryptKey, _ := userlib.HashKDF(masterKey, []byte("StructEncryptKey"))
 	HMACKey := userlib.Argon2Key([]byte(password), []byte(username), uint32(userlib.HashSize))
-	cipher, correctPswd := userlib.DatastoreGet(string(dsKey))
+	cipher, correctPswd := userlib.DatastoreGet(string(masterKey))
 
 	//check that username + password are valid
 	if !correctPswd {
 		return nil, errors.New("Incorrect password")
 	}
 	//check if user data is corrupt
-	correctUserdataHMACed := userlib.DatastoreGet(userdata.UUID)
+	// correctUserdataHMACed := userlib.DatastoreGet(userdata.UUID)
 	//unappend correctUserdataHMACed to get HMAC
 	correctUserdataEnc := cipher[:(len(cipher) - userlib.HashSize)]
 	correctHMAC := cipher[(len(cipher) - userlib.HashSize):]
