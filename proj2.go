@@ -108,10 +108,11 @@ type User struct {
 	// Note for JSON to marshal/unmarshal, the fields need to
 	// be public (start with a capital letter)
 
-	//Key and HMAc used to encrypt and verify Accessible List
+	//Key and HMAC used to encrypt and verify Accessible List
 	AccessibleUUID       UUID   //uuid of accessible list
 	AccessibleEncryptKey []byte //Key used to encrypt Accessible List
-	AccessibleHMAC       []byte //HMAc used to verify Accessible List
+	AccessibleIV 				 []byte //IV used to encrypt Accessible List
+	AccessibleHMAC       []byte //HMAC used to verify Accessible List
 }
 
 type Pair struct {
@@ -169,17 +170,16 @@ type Guardian struct {
 // hashes of common passwords downloaded from the internet.
 func InitUser(username string, password string) (userdataptr *User, err error) {
 	var userdata User
+	var accessiblelist AccessibleList
 	userdataptr = &userdata
 
 	userdata.Username = username
-	//userdata.Password = password
 
 	//checks if username already exists; if not, generate keys
 	_, used := userlib.KeystoreGet(username + "_username")
 	if used {
 		return nil, errors.New("username duplicated")
 	} else {
-
 		//master key (pbkd)
 		masterKey := userlib.Argon2Key([]byte(password), []byte(username), uint32(userlib.AESKeySize))
 		userdata.MasterKey = masterKey
@@ -190,6 +190,7 @@ func InitUser(username string, password string) (userdataptr *User, err error) {
 
 		//PKE key pair, generate private decryption key and public encryption key
 		ek, dk, _ := userlib.PKEKeyGen()
+		//convert username to key
 		userlib.KeystoreSet(username, ek)
 		userdata.PrivateDecKey = dk
 
@@ -201,16 +202,24 @@ func InitUser(username string, password string) (userdataptr *User, err error) {
 		//HMAC key
 		hmac := userlib.RandomBytes(userlib.AESKeySize)
 		userdata.HMACKey = hmac
-		// hmac2 := userlib.RandomBytes(userlib.AESKeySize)
-		// userdata.HMACKey_2 = hmac2
 
 		//UserStruct Location Key
 		lockey, _ := userlib.HashKDF(masterKey, []byte("Location"))
 		userdata.StructLocation = lockey
 
+		//IV, encrypt key, and HMAC key related to accessibleList
+		auuid := uuid.New()
+		userdata.AccessibleUUID = aauid
+		accessibleEncryptKey := userlib.RandomBytes(userlib.AESKeySize)
+		userdata.AccessibleEncryptKey = accessibleEncryptKey
+		accessibleIV := userlib.RandomBytes(userlib.AESBlockSize)
+		userdata.AccessibleIV = accessibleIV 
+		accessibleHMAC := userlib.RandomBytes(userlib.AESKeySize)
+		userdata.AccessibleHMAC = accessibleHMAC
+
 		//UserStruct UUID
 		suuid := uuid.New()
-		userdata.UUID = suuid
+		userdata.UserUUID = suuid
 
 		//marshal to json
 		userdataMarshaled, _ := json.Marshal(userdata)
@@ -251,7 +260,7 @@ func GetUser(username string, password string) (userdataptr *User, err error) {
 	dsKey := userlib.Argon2Key([]byte(password), []byte(username), uint32(len(username)))
 	userEncryptKey, _ := userlib.HashKDF(userdata.MasterKey, []byte("StructEncryptKey"))
 	HMACKey := userlib.Argon2Key([]byte(password), []byte(username), uint32(userlib.HashSize))
-	cipher, correctPswd := userlib.DatastoreGet(dsKey)
+	cipher, correctPswd := userlib.DatastoreGet(string(dsKey))
 
 	//check that username + password are valid
 	if !correctPswd {
@@ -260,8 +269,8 @@ func GetUser(username string, password string) (userdataptr *User, err error) {
 	//check if user data is corrupt
 	correctUserdataHMACed := userlib.DatastoreGet(userdata.UUID)
 	//unappend correctUserdataHMACed to get HMAC
-	correctUserdataEnc := correctUserdataHMACed[:(len(correctUserdataHMACed) - userlib.HashSize)]
-	correctHMAC := correctUserdataHMACed[(len(correctUserdataHMACed) - userlib.HashSize):]
+	correctUserdataEnc := cipher[:(len(cipher) - userlib.HashSize)]
+	correctHMAC := cipher[(len(cipher) - userlib.HashSize):]
 
 	tag := userlib.HMACEval(HMACKey, correctUserdataEnc)
 
@@ -271,7 +280,7 @@ func GetUser(username string, password string) (userdataptr *User, err error) {
 	}
 	//decrypt and unmarshal user struct if correct user credentials and integrity
 	decrypted := userlib.SymDec(userEncryptKey, correctUserdataEnc)
-	userdataUnMarshaled, _ := json.Unmarshal(decrypted)
+	userdataUnMarshaled, _ := json.Unmarshal(decrypted, userdataptr)
 	return userdataptr, nil
 }
 
@@ -304,7 +313,7 @@ func (userdata *User) StoreFile(filename string, data []byte) {
 	guardian.Owner = userdata.Username
 	guardian.AccessibleUser = append(guardian.AccessibleUser, userdata.Username)
 
-	//initialize keys nad mac for encrypt file header
+	//initialize keys and mac for encrypt file header
 	fileHeaderEncryptKey := userlib.RandomBytes(userlib.AESKeySize)
 	fileHeaderEncryptIV := userlib.RandomBytes(userlib.AESBlockSize)
 	guardian.EncryptKey = fileHeaderEncryptKey
