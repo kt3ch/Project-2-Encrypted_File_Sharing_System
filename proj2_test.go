@@ -4,15 +4,15 @@ package proj2
 // imports it will break the autograder, and we will be Very Upset.
 
 import (
-	"testing"
-	"reflect"
-	"github.com/cs161-staff/userlib"
-	_ "encoding/json"
 	_ "encoding/hex"
-	_ "github.com/google/uuid"
-	_ "strings"
+	_ "encoding/json"
 	_ "errors"
+	"github.com/cs161-staff/userlib"
+	_ "github.com/google/uuid"
+	"reflect"
 	_ "strconv"
+	_ "strings"
+	"testing"
 )
 
 func clear() {
@@ -39,6 +39,30 @@ func TestInit(t *testing.T) {
 	// If you want to comment the line above,
 	// write _ = u here to make the compiler happy
 	// You probably want many more tests here.
+}
+
+func TestGetUser(t *testing.T) {
+	clear()
+	t.Log("Initialization test")
+
+	// You can set this to false!
+	userlib.SetDebugStatus(true)
+
+	u, err := InitUser("alice", "fubar")
+	if err != nil {
+		// t.Error says the test fails
+		t.Error("Failed to initialize user", err)
+		return
+	}
+	// t.Log() only produces output if you run with "go test -v"
+	t.Log("Created user", u)
+	t.Log("Start GetUser test")
+	gu, err := GetUser("alice", "fubar")
+	if err != nil {
+		t.Error("Failed to get user", err)
+		return
+	}
+	t.Log("Get user", reflect.DeepEqual(u, gu))
 }
 
 func TestStorage(t *testing.T) {
@@ -78,7 +102,6 @@ func TestInvalidFile(t *testing.T) {
 	}
 }
 
-
 func TestShare(t *testing.T) {
 	clear()
 	u, err := InitUser("alice", "fubar")
@@ -94,7 +117,7 @@ func TestShare(t *testing.T) {
 
 	v := []byte("This is a test")
 	u.StoreFile("file1", v)
-	
+
 	var v2 []byte
 	var magic_string string
 
