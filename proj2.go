@@ -117,6 +117,8 @@ type User struct {
 type Pair struct {
 	FileUUID UUID
 	SymKey   []byte
+	IV 		 []byte
+	HMAC		[]byte
 }
 
 type AccessibleList struct {
@@ -280,13 +282,10 @@ func GetUser(username string, password string) (userdataptr *User, err error) {
 // The plaintext of the filename + the plaintext and length of the filename
 // should NOT be revealed to the datastore!
 func (userdata *User) StoreFile(filename string, data []byte) {
-	//var guardian Guardian
-	//TODO: This is a toy implementation.
-
 	//Check if this filename is used for another file
 	cUUID, _ := FromBytes([]byte(filename + userdata.Username)[:16])
-	_, err = userlib.DatastoreGet(cUUID) //
-	if err == nil {
+	_, err := userlib.DatastoreGet(cUUID) //
+	if err == false {
 		userdata.overwriteFile(filename, data)
 		return
 	}
@@ -303,6 +302,8 @@ func (userdata *User) StoreFile(filename string, data []byte) {
 	//Assign ownername
 	guardian.Owner = userdata.Username
 	guardian.AllowedUser = append(guardian.AllowedUser, userdata.Username)
+
+
 
 	//initialize keys nad mac for encrypt file header
 	fileHeaderEncryptKey := userlib.RandomBytes(userlib.AESKeySize)
@@ -344,24 +345,32 @@ func (userdata *User) StoreFile(filename string, data []byte) {
 	fileHeader.TailUUID = fnode.FileNodeUUID
 
 	//Marshall All objects
-	fileNodeMarshalled, _ := json.Marshal(fnode)
+	//fileNodeMarshalled, _ := json.Marshal(fnode)
 	fileHeaderMarshalled, _ := json.Marshal(fileHeader)
 	guardianMarshalled, _ := json.Marshal(guardian)
 
 	//encrypt and verify FileNode object
-	encryptedFileNode := userlib.SymEnc(fileHeader.NodeEncryptKey, fileHeader.NodeEncryptIV, fileNodeMarshalled)
-	encryptedFileNodeHMAC, _ := userlib.HMACEval(fileHeader.NodeHMACKey, encryptedFileNode)
-	storeFileNode := append(encryptedFileNode, encryptedFileNodeHMAC...)
+	//encryptedFileNode := userlib.SymEnc(fileHeader.NodeEncryptKey, fileHeader.NodeEncryptIV, fileNodeMarshalled)
+	//encryptedFileNodeHMAC, _ := userlib.HMACEval(fileHeader.NodeHMACKey, encryptedFileNode)
+	//storeFileNode := append(encryptedFileNode, encryptedFileNodeHMAC...)
+	encryptAndStore(fnode, fileHeader.NodeEncryptIV, fileHeader.NodeEncryptKey, fileHeader.NodeHMACKey, fnode.FileNodeUUID)
 
 	//encrypt and verify FileHeader object
 	encryptedFileHeader := userlib.SymEnc(guardian.EncryptKey, guardian.EncryptIV, fileHeaderMarshalled)
 	encryptedFileHeaderHMAC, _ := userlib.HMACEval(guardian.HMACKey, encryptedFileHeader)
 	storeFileHeader := append(encryptedFileHeader, encryptedFileHeaderHMAC...)
+	encryptAndStore()
+
+	//initialize encryption key and mac for guardian
+	guardianSymKey := userlib.RandomBytes(userlib.AESKeySize)
+	guardianIV := userlib.RandomBytes(userlib.AESBlockSize)
+	guardianHMAC := userlib.RandomBytes(userlib.AESKeySize)
+	guardianPair := Pair{guardian.GuardianUUID, guardianSymKey, guardianIV, guardianHMAC}
 
 	//encrypt and verify Guardian object
-	encryptedGuardian := userlib.SymEnc(userdata.EncryptKey, userdata.EncryptIV, guardianMarshalled)
-	encryptedGuardianHMAC, _ := userlib.HMACEval(userdata.HMACKey, encryptedGuardian)
-	storeGurdian := append(encryptedGuardian, encryptedFileHeaderHMAC)
+	encryptedGuardian := userlib.SymEnc(guardianSymKey, guardianIV, guardianMarshalled)
+	encryptedGuardianHMAC, _ := userlib.HMACEval(guardianHMAC, encryptedGuardian)
+	storeGurdian := append(encryptedGuardian, encryptedGuardianHMAC...)
 
 	//Store all of them into Datastore
 	userlib.DatastoreSet(fnode.FileNodeUUID, storeFileNode)
@@ -369,9 +378,24 @@ func (userdata *User) StoreFile(filename string, data []byte) {
 	userlib.DatastoreSet(guardian.GuardianUUID, storeGurdian)
 
 	//TODO: add to accessible and owned list
+	accessible, accesserr := userdata.getAccessibleList()
+	if accesserr != nil {
+		return
+	}
+	accessible.Owned[filename] = guardianPair
+
 
 	return
 }
+
+func encryptAndStore(i interface{}, iv []byte, key []byte, hmac []byte, muuid UUID) {
+	marshalled, _ := json.Marshal(i)
+	encrypted := userlib.SymEnc(key, iv, marshalled)
+	hmaced, _ := userlib.HMACEval(hmac, encrypted)
+	encrypted = append(encrypted, hmaced...)
+	userlib.DatastoreSet(muuid, encrypted)
+}
+
 
 func (userdata *User) overwriteFile(filename string, data []byte) {
 	return
@@ -404,6 +428,43 @@ func (userdata *User) AppendFile(filename string, data []byte) (err error) {
 	//marshal file struct, encrypt, hmac, and store in Datastore
 
 	return
+}
+
+func (userdata *User) getAccessibleList() (*AccessibleList, error) {
+	accessibleUnDecrypt, err := userlib.DatastoreGet(userdata.AccessibleUUID)
+	if err {
+		return nil, errors.New("No such file")
+	}
+	length := len(accessibleUnDecrypt)
+	if length < userlib.HashSize {
+		return nil, errors.New("Decryption Failed")
+	}
+	accessibleHMAC := accessibleUnDecrypt[length - userlib.HashSize :]
+	if !userlib.HMACEqual(accessibleHMAC, userdata.AccessibleHMAC) {
+		return nil, errors.New("Authentication Failed")
+	}
+	decryptAccessible := userlib.SymDec(userdata.AccessibleEncryptKey, accessibleUnDecrypt[:length - userlib.HashSize])
+	var accessible AccessibleList
+	jsonError := json.Unmarshal(decryptAccessible, &accessible)
+	if jsonError != nil {
+		return nil, errors.New("Decryption Failed")
+	}
+	return &accessible, nil
+}
+
+func (userdata *User) checkAccessibility(filename string) (*Guardian, error) {
+	accessible, err := userdata.getAccessibleList()
+	if err != nil {
+		return nil, err
+	}
+	guardianUUID, err := accessible.Owned[filename]
+	if err {
+		guardianUUID, err = accessible.Shared[filename]
+		if err {
+			return nil, errors.New("File not accessible")
+		}
+	}
+	gurdianUnDecrypt, _ :=
 }
 
 // This loads a file from the Datastore.
