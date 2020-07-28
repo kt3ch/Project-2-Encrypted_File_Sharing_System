@@ -312,8 +312,6 @@ func (userdata *User) StoreFile(filename string, data []byte) {
 	guardian.Owner = userdata.Username
 	guardian.AllowedUser = append(guardian.AllowedUser, userdata.Username)
 
-
-
 	//initialize keys and mac for encrypt file header
 	fileHeaderEncryptKey := userlib.RandomBytes(userlib.AESKeySize)
 	fileHeaderEncryptIV := userlib.RandomBytes(userlib.AESBlockSize)
@@ -416,14 +414,6 @@ func (fileHeader *FileHeader) encryptFileNode(data []byte) ([]byte, []byte) {
 	return fileEncrypted, HMACTag
 }
 
-//type Guardian struct {
-//	UUID           UUID
-//	EncryptKey     []byte
-//	HMACKey        []byte
-//	Owner          string
-//	AccessibleUser []string
-//}
-
 // This adds on to an existing file.
 //
 // Append should be efficient, you shouldn't rewrite or reencrypt the
@@ -506,6 +496,29 @@ func (userdata *User) LoadFile(filename string) (data []byte, err error) {
 // should be able to know the sender.
 func (userdata *User) ShareFile(filename string, recipient string) (
 	magic_string string, err error) {
+		var guardian Guardian
+		var fileheader FileHeader
+		//check keystore to see if recipient is valid
+		recipient, ok := userlib.KeystoreGet(recipient)
+		if !ok {
+			return "", errors.New("Recipient is invalid")
+		}
+		//checks if file doesn't exist
+		guardian.Owner = userdata.Username
+		guardian.AllowedUser = append(guardian.AllowedUser, recipient)
+
+		//checks for malicious action
+
+
+
+
+		accessible, accesserr := userdata.getAccessibleList()
+		if accesserr != nil {
+			return
+		}
+		accessible.Owned[filename] = guardianPair
+
+
 
 	return
 }
