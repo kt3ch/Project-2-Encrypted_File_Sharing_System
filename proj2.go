@@ -208,7 +208,8 @@ func InitUser(username string, password string) (userdataptr *User, err error) {
 		userdata.PrivateSignKey = privateSign
 
 		//HMAC key
-		hmac, _ := userlib.HashKDF(masterKey, []byte("StructHMAC"))
+		//hmac, _ := userlib.HashKDF(masterKey, []byte("StructHMAC"))
+		hmac := userlib.Argon2Key([]byte(password), []byte(username+"HMAC"), uint32(userlib.AESBlockSize))
 		userdata.HMACKey = hmac
 
 		//UserStruct Location Key
@@ -228,7 +229,7 @@ func InitUser(username string, password string) (userdataptr *User, err error) {
 		encryptAndStore(accessible, userdata.AccessibleIV, userdata.AccessibleEncryptKey, userdata.AccessibleHMAC, auuid)
 
 		//UserStruct UUID
-		suuid := New()
+		suuid := bytesToUUID(masterKey)
 		userdata.UserUUID = suuid
 
 		//marshal to json
@@ -242,11 +243,9 @@ func InitUser(username string, password string) (userdataptr *User, err error) {
 		//append HMAC tag to the end of the encrypted userdata
 		//userdataHMACed := append(userdataEncrypted, HMACTag...)
 		//userlib.DatastoreSet(suuid, userdataHMACed)
-		encryptAndStore(userdata, userEncryptIV[:userlib.AESBlockSize], userEncryptKey[:userlib.AESKeySize], userdata.HMACKey[:userlib.AESKeySize], suuid)
+		encryptAndStore(userdata, userEncryptIV[:userlib.AESBlockSize], userEncryptKey[:userlib.AESKeySize], userdata.HMACKey, suuid)
 
 	}
-
-	//End of toy implementation
 
 	return &userdata, nil
 }
@@ -263,12 +262,12 @@ func GetUser(username string, password string) (userdataptr *User, err error) {
 	if !ok {
 		return nil, errors.New("Invalid user")
 	}
-	//pbkd to generate key from password and username, see if it's stored in Datastore
-	masterKey := userlib.Argon2Key([]byte(password), []byte(username), uint32(len(username)))
-	userEncryptKey, _ := userlib.HashKDF(masterKey, []byte("StructEncryptKey"))
-	HMACKey := userlib.Argon2Key([]byte(password), []byte(username), uint32(userlib.HashSize))
-	cipher, correctPswd := userlib.DatastoreGet(bytesToUUID(masterKey))
 
+	//pbkd to generate key from password and username, see if it's stored in Datastore
+	masterKey := userlib.Argon2Key([]byte(password), []byte(username), uint32(userlib.AESKeySize))
+	userEncryptKey, _ := userlib.HashKDF(masterKey[:16], []byte("StructEncryptKey"))
+	sHMACKey := userlib.Argon2Key([]byte(password), []byte(username+"HMAC"), uint32(userlib.AESBlockSize))
+	cipher, correctPswd := userlib.DatastoreGet(bytesToUUID(masterKey))
 	//check that username + password are valid
 	if !correctPswd {
 		return nil, errors.New("Incorrect password")
@@ -276,17 +275,23 @@ func GetUser(username string, password string) (userdataptr *User, err error) {
 	//check if user data is corrupt
 	// correctUserdataHMACed := userlib.DatastoreGet(userdata.UUID)
 	//unappend correctUserdataHMACed to get HMAC
-	correctUserdataEnc := cipher[:(len(cipher) - userlib.HashSize)]
-	correctHMAC := cipher[(len(cipher) - userlib.HashSize):]
+	length := len(cipher)
+	if length < userlib.AESBlockSize {
+		return nil, errors.New(string(length))
+	}
 
-	tag, _ := userlib.HMACEval(HMACKey, correctUserdataEnc)
+	correctUserdataEnc := cipher[:(length - userlib.HashSize)]
+	correctHMAC := cipher[(length - userlib.HashSize):]
+
+	tag, _ := userlib.HMACEval(sHMACKey, correctUserdataEnc)
+	//return nil , errors.New(strconv.FormatInt(int64(userlib.HashSize), 10))
 
 	//compare HMACs
-	if !userlib.HMACEqual(correctHMAC, tag) {
+	if !userlib.HMACEqual(tag, correctHMAC) {
 		return nil, errors.New("User data is corrupt")
 	}
 	//decrypt and unmarshal user struct if correct user credentials and integrity
-	decrypted := userlib.SymDec(userEncryptKey, correctUserdataEnc)
+	decrypted := userlib.SymDec(userEncryptKey[:userlib.AESKeySize], correctUserdataEnc)
 
 	err = json.Unmarshal(decrypted, userdataptr)
 	if err != nil {
