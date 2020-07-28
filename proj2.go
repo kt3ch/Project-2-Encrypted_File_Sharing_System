@@ -215,7 +215,7 @@ func InitUser(username string, password string) (userdataptr *User, err error) {
 		accessibleEncryptKey := userlib.RandomBytes(userlib.AESKeySize)
 		userdata.AccessibleEncryptKey = accessibleEncryptKey
 		accessibleIV := userlib.RandomBytes(userlib.AESBlockSize)
-		userdata.AccessibleIV = accessibleIV 
+		userdata.AccessibleIV = accessibleIV
 		accessibleHMAC := userlib.RandomBytes(userlib.AESKeySize)
 		userdata.AccessibleHMAC = accessibleHMAC
 
