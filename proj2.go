@@ -682,7 +682,7 @@ func (userdata *User) ReceiveFile(filename string, sender string,
 
 	//encryptAndStore(guardian, guardianIV, guardianSymKey, guardianHMAC, guardian.GuardianUUID)
 
-	userdata.FileEnc
+
 	//add pair to recipient's accessible.shared
 	//recipient encrypt file with own keys and store on Datastore as well
 	//check if file with same name already exists for recipient
