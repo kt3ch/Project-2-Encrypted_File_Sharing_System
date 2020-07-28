@@ -346,8 +346,6 @@ func (userdata *User) StoreFile(filename string, data []byte) {
 
 	//Marshall All objects
 	//fileNodeMarshalled, _ := json.Marshal(fnode)
-	fileHeaderMarshalled, _ := json.Marshal(fileHeader)
-	guardianMarshalled, _ := json.Marshal(guardian)
 
 	//encrypt and verify FileNode object
 	//encryptedFileNode := userlib.SymEnc(fileHeader.NodeEncryptKey, fileHeader.NodeEncryptIV, fileNodeMarshalled)
@@ -355,11 +353,8 @@ func (userdata *User) StoreFile(filename string, data []byte) {
 	//storeFileNode := append(encryptedFileNode, encryptedFileNodeHMAC...)
 	encryptAndStore(fnode, fileHeader.NodeEncryptIV, fileHeader.NodeEncryptKey, fileHeader.NodeHMACKey, fnode.FileNodeUUID)
 
-	//encrypt and verify FileHeader object
-	encryptedFileHeader := userlib.SymEnc(guardian.EncryptKey, guardian.EncryptIV, fileHeaderMarshalled)
-	encryptedFileHeaderHMAC, _ := userlib.HMACEval(guardian.HMACKey, encryptedFileHeader)
-	storeFileHeader := append(encryptedFileHeader, encryptedFileHeaderHMAC...)
-	encryptAndStore()
+	encryptAndStore(fileHeader, guardian.EncryptIV, guardian.EncryptKey, guardian.HMACKey, fileHeader.FileHeaderUUID)
+
 
 	//initialize encryption key and mac for guardian
 	guardianSymKey := userlib.RandomBytes(userlib.AESKeySize)
@@ -367,10 +362,8 @@ func (userdata *User) StoreFile(filename string, data []byte) {
 	guardianHMAC := userlib.RandomBytes(userlib.AESKeySize)
 	guardianPair := Pair{guardian.GuardianUUID, guardianSymKey, guardianIV, guardianHMAC}
 
-	//encrypt and verify Guardian object
-	encryptedGuardian := userlib.SymEnc(guardianSymKey, guardianIV, guardianMarshalled)
-	encryptedGuardianHMAC, _ := userlib.HMACEval(guardianHMAC, encryptedGuardian)
-	storeGurdian := append(encryptedGuardian, encryptedGuardianHMAC...)
+
+	encryptAndStore(guardian, guardianIV, guardianSymKey, guardianHMAC, guardian.GuardianUUID)
 
 	//Store all of them into Datastore
 	userlib.DatastoreSet(fnode.FileNodeUUID, storeFileNode)
@@ -383,6 +376,9 @@ func (userdata *User) StoreFile(filename string, data []byte) {
 		return
 	}
 	accessible.Owned[filename] = guardianPair
+
+	userlib.DatastoreDelete(userdata.AccessibleUUID)
+	encryptAndStore(accessible, userdata.AccessibleIV, userdata.AccessibleEncryptKey, userdata.AccessibleHMAC, userdata.AccessibleUUID)
 
 
 	return
