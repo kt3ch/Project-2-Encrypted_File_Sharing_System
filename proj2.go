@@ -310,11 +310,7 @@ func (userdata *User) StoreFile(filename string, data []byte) {
 
 	//Assign ownername
 	guardian.Owner = userdata.Username
-<<<<<<< HEAD
-	guardian.AllowedUser = append(guardian.AllowedUser, userdata.Username)
-=======
 	guardian.AllowedUser[userdata.Username] = true
->>>>>>> 46bcc5250f4842812719e46a13bee654339e1533
 
 	//initialize keys and mac for encrypt file header
 	fileHeaderEncryptKey := userlib.RandomBytes(userlib.AESKeySize)
@@ -409,6 +405,14 @@ func (fileHeader *FileHeader) encryptFileNode(data []byte) ([]byte, []byte) {
 	HMACTag, _ := userlib.HMACEval(fileHeader.HMACKey, data)
 	return fileEncrypted, HMACTag
 }
+
+//type Guardian struct {
+//	UUID           UUID
+//	EncryptKey     []byte
+//	HMACKey        []byte
+//	Owner          string
+//	AccessibleUser []string
+//}
 
 // This adds on to an existing file.
 //
@@ -573,30 +577,7 @@ func (userdata *User) LoadFile(filename string) (data []byte, err error) {
 // should be able to know the sender.
 func (userdata *User) ShareFile(filename string, recipient string) (
 	magic_string string, err error) {
-		var guardian Guardian
-		var fileheader FileHeader
-		//check keystore to see if recipient is valid
-		recipient, ok := userlib.KeystoreGet(recipient)
-		if !ok {
-			return "", errors.New("Recipient is invalid")
-		}
-		//checks if file doesn't exist
-		guardian.Owner = userdata.Username
-		guardian.AllowedUser = append(guardian.AllowedUser, recipient)
-
-		//checks for malicious action
-
-
-
-
-		accessible, accesserr := userdata.getAccessibleList()
-		if accesserr != nil {
-			return
-		}
-		accessible.Owned[filename] = guardianPair
-
-
-
+	
 	return
 }
 
