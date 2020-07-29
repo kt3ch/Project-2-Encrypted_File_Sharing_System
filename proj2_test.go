@@ -67,13 +67,14 @@ func TestGetUser(t *testing.T) {
 
 func TestStorage(t *testing.T) {
 	clear()
+	userlib.SetDebugStatus(true)
 	u, err := InitUser("alice", "fubar")
 	if err != nil {
 		t.Error("Failed to initialize user", err)
 		return
 	}
 
-	v := []byte("This is a test")
+	v := []byte("This is a tetttttttst")
 	u.StoreFile("file1", v)
 
 	v2, err2 := u.LoadFile("file1")
