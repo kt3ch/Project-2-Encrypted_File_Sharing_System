@@ -235,7 +235,7 @@ func InitUser(username string, password string) (userdataptr *User, err error) {
 		encryptAndStore(&accessible, userdata.AccessibleIV, userdata.AccessibleEncryptKey, userdata.AccessibleHMAC, userdata.AccessibleUUID)
 
 		//UserStruct UUID
-		hashedUser := userlib.Hash([]byte(username))
+		hashedUser := userlib.Hash([]byte(masterKey))
 		suuid, _ := FromBytes(hashedUser[:16])
 		userdata.UserUUID = suuid
 
@@ -267,9 +267,11 @@ func GetUser(username string, password string) (userdataptr *User, err error) {
 
 	//pbkd to generate key from password and username, see if it's stored in Datastore
 	masterKey := userlib.Argon2Key([]byte(password), []byte(username), uint32(userlib.AESKeySize))
+	hashedUser := userlib.Hash([]byte(masterKey))
+	suuid, _ := FromBytes(hashedUser[:16])
 	userEncryptKey, _ := userlib.HashKDF(masterKey[:16], []byte("StructEncryptKey"))
 	sHMACKey := userlib.Argon2Key([]byte(password), []byte(username+"HMAC"), uint32(userlib.AESBlockSize))
-	cipher, exists := userlib.DatastoreGet(userdata.UserUUID)
+	cipher, exists := userlib.DatastoreGet(suuid)
 
 	//check that username + password are valid
 	if !exists {
