@@ -5,7 +5,6 @@ package proj2
 // imports it will break the autograder. We will be very upset.
 
 import (
-	"fmt"
 	// You neet to add with
 	// go get github.com/cs161-staff/userlib
 	"github.com/cs161-staff/userlib"
@@ -405,6 +404,47 @@ func encryptAndStore(i interface{}, iv []byte, key []byte, hmac []byte, muuid UU
 }
 
 func (userdata *User) overwriteFile(filename string, data []byte) {
+	fileHeader, err := userdata.checkAccessibility(filename)
+	if err != nil {
+		data = nil
+		return
+	}
+
+	data = []byte("")
+	currUUID := fileHeader.HeadUUID
+
+	//Delete old file
+	for currUUID != Nil {
+		currNode, cerr := fileHeader.decryptFileNode(currUUID)
+		if cerr != nil {
+			data = nil
+			err = cerr
+			return
+		}
+		currUUID = currNode.NextUUID
+		userlib.DatastoreDelete(currNode.FileNodeUUID)
+	}
+
+	//create new file
+	var newNode FileNode
+	newNode.FileNodeUUID = fileHeader.HeadUUID
+	newNode.NextUUID = Nil
+	newNode.Data = fileHeader.encryptFileNode(data)
+	encryptAndStore(newNode, fileHeader.NodeEncryptIV, fileHeader.NodeEncryptKey, fileHeader.NodeHMACKey, newNode.FileNodeUUID)
+
+	//change fileHeader
+	fileHeader.TailUUID = newNode.FileNodeUUID
+	acclist, alerr := userdata.getAccessibleList()
+	if alerr != nil {
+		err = errors.New("Append Error")
+		return
+	}
+	guard, gerr := userdata.getGuardian(filename, acclist)
+	if gerr != nil {
+		err = errors.New("Append error")
+	}
+	userlib.DatastoreDelete(fileHeader.FileHeaderUUID)
+	encryptAndStore(fileHeader, guard.EncryptIV, guard.EncryptKey, guard.HMACKey, fileHeader.FileHeaderUUID)
 	return
 }
 
@@ -458,11 +498,11 @@ func (userdata *User) AppendFile(filename string, data []byte) (err error) {
 	fileHeader.TailUUID = newNode.FileNodeUUID
 
 	//Store new node
-	encryptAndStore(newNode, fileHeader.NodeEncryptIV, fileHeader.NodeEncryptKey, fileHeader.NodeHMACKey,newNode.FileNodeUUID)
+	encryptAndStore(newNode, fileHeader.NodeEncryptIV, fileHeader.NodeEncryptKey, fileHeader.NodeHMACKey, newNode.FileNodeUUID)
 
 	//Update tailNode
 	userlib.DatastoreDelete(tailNode.FileNodeUUID)
-	encryptAndStore(tailNode, fileHeader.NodeEncryptIV, fileHeader.NodeEncryptKey, fileHeader.NodeHMACKey,tailNode.FileNodeUUID)
+	encryptAndStore(tailNode, fileHeader.NodeEncryptIV, fileHeader.NodeEncryptKey, fileHeader.NodeHMACKey, tailNode.FileNodeUUID)
 
 	//Update fileHeader
 	acclist, alerr := userdata.getAccessibleList()
@@ -475,7 +515,7 @@ func (userdata *User) AppendFile(filename string, data []byte) (err error) {
 		err = errors.New("Append error")
 	}
 	userlib.DatastoreDelete(fileHeader.FileHeaderUUID)
-	encryptAndStore(fileHeader, guard.EncryptIV, guard.EncryptKey, guard.HMACKey,fileHeader.FileHeaderUUID)
+	encryptAndStore(fileHeader, guard.EncryptIV, guard.EncryptKey, guard.HMACKey, fileHeader.FileHeaderUUID)
 
 	return
 }
@@ -484,7 +524,7 @@ func (userdata *User) getAccessibleList() (accessibleptr *AccessibleList, err er
 	var accessible AccessibleList
 	accessibleUnDecrypt, derr := userlib.DatastoreGet(userdata.AccessibleUUID)
 	if !derr {
-		return nil, errors.New(fmt.Sprintf("%x-%x-%x-%x-%x", userdata.AccessibleUUID[0:4], userdata.AccessibleUUID[4:6], userdata.AccessibleUUID[6:8], userdata.AccessibleUUID[8:10], userdata.AccessibleUUID[10:]))
+		return nil, errors.New("accessible error")
 	}
 
 	length := len(accessibleUnDecrypt)
@@ -688,50 +728,50 @@ func (userdata *User) ShareFile(filename string, recipient string) (
 	//var guardian Guardian
 	//
 	////get file UUID and keys
-	// fileUUID :=
-	// //check keystore to see if recipient is valid
-	// recipient, ok := userlib.KeystoreGet(recipient)
-	// if !ok {
-	// 	return "", errors.New("Recipient is invalid")
-	// }
-	// //checks if user has access to the file
-	// fileHeader, err := userdata.checkAccessibility(filename)
-	// if err {
-	// 	return "", errors.New("User doesn't have access to this file")
-	// }
+	//fileUUID :=
+	////check keystore to see if recipient is valid
+	//recipient, ok := userlib.KeystoreGet(recipient)
+	//if !ok {
+	//	return "", errors.New("Recipient is invalid")
+	//}
+	////checks if user has access to the file
+	//fileHeader, err := userdata.checkAccessibility(filename)
+	//if err {
+	//	return "", errors.New("User doesn't have access to this file")
+	//}
 	//
-	// //initialize guardian object
-	// newUUID = New()
-	// guardian.GuardianUUID = newUUID
-	// guardianSymKey := userlib.RandomBytes(userlib.AESKeySize)
-	// guardianIV := userlib.RandomBytes(userlib.AESBlockSize)
-	// guardianHMAC := userlib.RandomBytes(userlib.AESKeySize)
-	// guardianPair := Pair{guardian.GuardianUUID, guardianSymKey, guardianIV, guardianHMAC}
+	////initialize guardian object
+	//newUUID = New()
+	//guardian.GuardianUUID = newUUID
+	//guardianSymKey := userlib.RandomBytes(userlib.AESKeySize)
+	//guardianIV := userlib.RandomBytes(userlib.AESBlockSize)
+	//guardianHMAC := userlib.RandomBytes(userlib.AESKeySize)
+	//guardianPair := Pair{guardian.GuardianUUID, guardianSymKey, guardianIV, guardianHMAC}
 	//
-	// //generate access token for recipient, encrypt using PKE
+	////generate access token for recipient, encrypt using PKE
 	//
-	// recPKEKey, ok := userlib.KeystoreGet(recipient)
-	// if !ok {
-	// 	return "", errors.New("Recipient is missing public encryption key")
-	// }
+	//recPKEKey, ok := userlib.KeystoreGet(recipient)
+	//if !ok {
+	//	return "", errors.New("Recipient is missing public encryption key")
+	//}
 	//
-	// //add recipient’s name to AllowedUser map
-	// guardian.AllowedUser = append(guardian.AllowedUser, recipient)
+	////add recipient’s name to AllowedUser map
+	//guardian.AllowedUser [recipient] = true
 	//
-	// //encrypt pair struct with recipient's public PKE key
-	// encFileUUID, _ := userlib.pkeEnc(recPKEKey, guardianPair.FileUUID)
-	// encFileEncKey, _ := userlib.pkeEnc(recPKEKey, guardianPair.SymKey)
-	// encFileIV, _ := userlib.pkeEnc(recPKEKey, guardianPair.IV)
-	// encFileHmacKey, _ := userlib.pkeEnc(recPKEKey, guardianPair.HMAC)
+	////encrypt pair struct with recipient's public PKE key
+	//encFileUUID, _ := userlib.pkeEnc(recPKEKey, guardianPair.FileUUID)
+	//encFileEncKey, _ := userlib.pkeEnc(recPKEKey, guardianPair.SymKey)
+	//encFileIV, _ := userlib.pkeEnc(recPKEKey, guardianPair.IV)
+	//encFileHmacKey, _ := userlib.pkeEnc(recPKEKey, guardianPair.HMAC)
 	//
-	// //token generation
-	// accessToken := Pair{encFileUUID, encFileEncKey, encFileIV, encFileHmacKey}
-	// encMsgBytes, _ := json.Marshal(accessToken)
-	// sig, _ := userlib.dsSign(userdata.PrivateSignKey, encMsgBytes)
-	// magicStringBytes, _ := json.Marshal(SharingPair{encMsgBytes})
-	// magic_string = string(magicStringBytes)
-	// //symEnc for files, PKE for access tokens
-	// return magic_string, _
+	////token generation
+	//accessToken := Pair{encFileUUID, encFileEncKey, encFileIV, encFileHmacKey}
+	//encMsgBytes, _ := json.Marshal(accessToken)
+	//sig, _ := userlib.dsSign(userdata.PrivateSignKey, encMsgBytes)
+	//magicStringBytes, _ := json.Marshal(SharingPair{encMsgBytes})
+	//magic_string = string(magicStringBytes)
+	////symEnc for files, PKE for access tokens
+	//return magic_string, _
 	return
 }
 
