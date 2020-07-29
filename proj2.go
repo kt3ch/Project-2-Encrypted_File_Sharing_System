@@ -469,14 +469,16 @@ func (userdata *User) AppendFile(filename string, data []byte) (err error) {
 	//marshal file struct, encrypt, hmac, and store in Datastore
 	//TODO: Append to Tail, would be fast given function I defined below
 	fileHeader, accerr := userdata.checkAccessibility(filename)
-	if accerr != nil {
-		err = errors.New("Access error")
-		return
+	if accerr != nil || fileHeader == nil {
+		//fa, _ := json.Marshal(accerr)
+		userlib.DebugMsg("should print error")
+		return errors.New("Access error")
 	}
+
 	tailNode, tailerr := fileHeader.decryptFileNode(fileHeader.TailUUID)
 	if tailerr != nil {
 		err = errors.New("Node Access error")
-		return
+		return err
 	}
 
 	//Set up New node
@@ -545,16 +547,14 @@ func (userdata *User) getGuardian(filename string, accessible *AccessibleList) (
 	if !accesserr {
 		guardianUUID, accesserr = accessible.Shared[filename]
 		if !accesserr {
-			um, _ := json.Marshal(accessible)
-			return nil, errors.New(string(um))
+			return nil, errors.New("Access Error")
+			//return nil, errors.New("Guardian Not accessib")
 		}
 	}
 	guardianUnDecrypt, datastoreerr := userlib.DatastoreGet(guardianUUID.FileUUID)
 	if !datastoreerr {
 		//return nil, errors.New("No such file exists")
-		//return nil, errors.New(fmt.Sprintf("%x-%x-%x-%x-%x", guardianUUID.FileUUID[0:4], guardianUUID.FileUUID[4:6], guardianUUID.FileUUID[6:8], guardianUUID.FileUUID[8:10], guardianUUID.FileUUID[10:]))
-		um, _ := json.Marshal(guardianUUID)
-		return nil, errors.New(string(um))
+		return nil, errors.New("get Guardian Error")
 	}
 
 	length := len(guardianUnDecrypt)
@@ -605,11 +605,11 @@ func (userdata *User) getFileHeader(guardian *Guardian) (*FileHeader, error) {
 func (userdata *User) checkAccessibility(filename string) (*FileHeader, error) {
 	accessible, err := userdata.getAccessibleList()
 	if err != nil {
-		return nil, err
+		return nil, errors.New("Accessible List error")
 	}
 	guardian, err := userdata.getGuardian(filename, accessible)
 	if err != nil {
-		return nil, err
+		return nil, errors.New("Accessible List error")
 	}
 	allowed, allowederr := guardian.AllowedUser[userdata.Username]
 	if !allowed || !allowederr {
@@ -705,6 +705,50 @@ func (userdata *User) LoadFile(filename string) (data []byte, err error) {
 	return
 }
 
+func publicEncrypt(key userlib.PKEEncKey, data []byte) ([]byte, error) {
+	length := len(data)
+	output := []byte("")
+	keySize := 126
+	for start := 0; start < length; start += keySize {
+		end := start + keySize
+		if start+keySize > length {
+			end = length
+		}
+		userlib.DebugMsg("length of encrypted: %d", length)
+		encrypted, encerr := userlib.PKEEnc(key, data[start:end])
+		//userlib.DebugMsg("length after encrypted: %d", len(encrypted))
+		if encerr != nil {
+			//return nil, errors.New("PKE error")
+			return nil, encerr
+		}
+		output = append(output, encrypted...)
+	}
+
+	return output, nil
+}
+
+func publicDecrypt(key userlib.PKEDecKey, data []byte) ([]byte, error) {
+	length := len(data)
+	output := []byte("")
+	keySize := 256
+	for start := 0; start < length; start += keySize {
+		end := start + keySize
+		if start+keySize > length {
+			end = length
+		}
+		userlib.DebugMsg("length before decrypt : %d %d", start, end)
+		userlib.DebugMsg("length: %d", length)
+		encrypted, encerr := userlib.PKEDec(key, data[start:end])
+		if encerr != nil {
+			//return nil, errors.New("PKE error")
+			return nil, encerr
+		}
+		output = append(output, encrypted...)
+	}
+
+	return output, nil
+}
+
 // This creates a sharing record, which is a key pointing to something
 // in the datastore to share with the recipient.
 
@@ -741,7 +785,7 @@ func (userdata *User) ShareFile(filename string, recipient string) (
 	}
 
 	//add recipient’s name to AllowedUser map
-	guardian.AllowedUser [recipient] = true
+	guardian.AllowedUser[recipient] = true
 
 	//encrypt pair struct with recipient's public PKE key
 	encFileUUID, err := userlib.PKEEnc(recPKEKey, guardianPair.FileUUID)
