@@ -192,9 +192,9 @@ func InitUser(username string, password string) (userdataptr *User, err error) {
 		masterKey := userlib.Argon2Key([]byte(password), []byte(username), uint32(userlib.AESKeySize))
 		userdata.MasterKey = masterKey
 
-		//location key (hkdf) for storing the User Struct in Datastore
-		lk, _ := userlib.HashKDF(masterKey, []byte("StructLocation"))
-		userdata.StructLocation = lk
+		// //location key (hkdf) for storing the User Struct in Datastore
+		// lk, _ := userlib.HashKDF(masterKey, []byte("StructLocation"))
+		// userdata.StructLocation = lk
 
 		//PKE key pair, generate private decryption key and public encryption key
 		ek, dk, _ := userlib.PKEKeyGen()
@@ -229,7 +229,8 @@ func InitUser(username string, password string) (userdataptr *User, err error) {
 		encryptAndStore(accessible, userdata.AccessibleIV, userdata.AccessibleEncryptKey, userdata.AccessibleHMAC, auuid)
 
 		//UserStruct UUID
-		suuid := bytesToUUID(masterKey)
+		hashedUser := userlib.hash(username)
+		suuid := uuid.FromBytes(hashedUser)
 		userdata.UserUUID = suuid
 
 		//marshal to json
@@ -267,19 +268,20 @@ func GetUser(username string, password string) (userdataptr *User, err error) {
 	masterKey := userlib.Argon2Key([]byte(password), []byte(username), uint32(userlib.AESKeySize))
 	userEncryptKey, _ := userlib.HashKDF(masterKey[:16], []byte("StructEncryptKey"))
 	sHMACKey := userlib.Argon2Key([]byte(password), []byte(username+"HMAC"), uint32(userlib.AESBlockSize))
-	cipher, correctPswd := userlib.DatastoreGet(bytesToUUID(masterKey))
+	cipher, exists := userlib.DatastoreGet(userdata.UserUUID)
+
 	//check that username + password are valid
-	if !correctPswd {
-		return nil, errors.New("Incorrect password")
+	if !exists {
+		return nil, errors.New("Invalid uuid")
 	}
 	//check if user data is corrupt
-	// correctUserdataHMACed := userlib.DatastoreGet(userdata.UUID)
-	//unappend correctUserdataHMACed to get HMAC
+
 	length := len(cipher)
 	if length < userlib.AESBlockSize {
 		return nil, errors.New(string(length))
 	}
 
+	//unappend correctUserdataHMACed to get HMAC
 	correctUserdataEnc := cipher[:(length - userlib.HashSize)]
 	correctHMAC := cipher[(length - userlib.HashSize):]
 
@@ -298,6 +300,9 @@ func GetUser(username string, password string) (userdataptr *User, err error) {
 		userdataptr = nil
 		err = errors.New("Json Error")
 		return
+	}
+	if userdata.Username != username {
+		return nil, errors.New("Incorrect user struct")
 	}
 	return userdataptr, nil
 }
@@ -631,50 +636,50 @@ func (userdata *User) ShareFile(filename string, recipient string) (
 	//var guardian Guardian
 	//
 	////get file UUID and keys
-	//fileUUID :=
-	////check keystore to see if recipient is valid
-	//recipient, ok := userlib.KeystoreGet(recipient)
-	//if !ok {
-	//	return "", errors.New("Recipient is invalid")
-	//}
-	////checks if user has access to the file
-	//fileHeader, err := userdata.checkAccessibility(filename)
-	//if err {
-	//	return "", errors.New("User doesn't have access to this file")
-	//}
-	//
-	////initialize guardian object
-	//newUUID = New()
-	//guardian.GuardianUUID = newUUID
-	//guardianSymKey := userlib.RandomBytes(userlib.AESKeySize)
-	//guardianIV := userlib.RandomBytes(userlib.AESBlockSize)
-	//guardianHMAC := userlib.RandomBytes(userlib.AESKeySize)
-	//guardianPair := Pair{guardian.GuardianUUID, guardianSymKey, guardianIV, guardianHMAC}
-	//
-	////generate access token for recipient, encrypt using PKE
-	//
-	//recPKEKey, ok := userlib.KeystoreGet(recipient)
-	//if !ok {
-	//	return "", errors.New("Recipient is missing public encryption key")
-	//}
-	//
-	////add recipient’s name to AllowedUser map
-	//guardian.AllowedUser = append(guardian.AllowedUser, recipient)
-	//
-	////encrypt pair struct with recipient's public PKE key
-	//encFileUUID, _ := userlib.pkeEnc(recPKEKey, guardianPair.FileUUID)
-	//encFileEncKey, _ := userlib.pkeEnc(recPKEKey, guardianPair.SymKey)
-	//encFileIV, _ := userlib.pkeEnc(recPKEKey, guardianPair.IV)
-	//encFileHmacKey, _ := userlib.pkeEnc(recPKEKey, guardianPair.HMAC)
-	//
-	////token generation
-	//accessToken := Pair{encFileUUID, encFileEncKey, encFileIV, encFileHmacKey}
-	//encMsgBytes, _ := json.Marshal(accessToken)
-	//sig, _ := userlib.dsSign(userdata.PrivateSignKey, encMsgBytes)
-	//magicStringBytes, _ := json.Marshal(SharingPair{encMsgBytes})
-	//magic_string = string(magicStringBytes)
-	////symEnc for files, PKE for access tokens
-	//return magic_string, _
+	fileUUID :=
+	//check keystore to see if recipient is valid
+	recipient, ok := userlib.KeystoreGet(recipient)
+	if !ok {
+		return "", errors.New("Recipient is invalid")
+	}
+	//checks if user has access to the file
+	fileHeader, err := userdata.checkAccessibility(filename)
+	if err {
+		return "", errors.New("User doesn't have access to this file")
+	}
+
+	//initialize guardian object
+	newUUID = New()
+	guardian.GuardianUUID = newUUID
+	guardianSymKey := userlib.RandomBytes(userlib.AESKeySize)
+	guardianIV := userlib.RandomBytes(userlib.AESBlockSize)
+	guardianHMAC := userlib.RandomBytes(userlib.AESKeySize)
+	guardianPair := Pair{guardian.GuardianUUID, guardianSymKey, guardianIV, guardianHMAC}
+
+	//generate access token for recipient, encrypt using PKE
+
+	recPKEKey, ok := userlib.KeystoreGet(recipient)
+	if !ok {
+		return "", errors.New("Recipient is missing public encryption key")
+	}
+
+	//add recipient’s name to AllowedUser map
+	guardian.AllowedUser = append(guardian.AllowedUser, recipient)
+
+	//encrypt pair struct with recipient's public PKE key
+	encFileUUID, _ := userlib.pkeEnc(recPKEKey, guardianPair.FileUUID)
+	encFileEncKey, _ := userlib.pkeEnc(recPKEKey, guardianPair.SymKey)
+	encFileIV, _ := userlib.pkeEnc(recPKEKey, guardianPair.IV)
+	encFileHmacKey, _ := userlib.pkeEnc(recPKEKey, guardianPair.HMAC)
+
+	//token generation
+	accessToken := Pair{encFileUUID, encFileEncKey, encFileIV, encFileHmacKey}
+	encMsgBytes, _ := json.Marshal(accessToken)
+	sig, _ := userlib.dsSign(userdata.PrivateSignKey, encMsgBytes)
+	magicStringBytes, _ := json.Marshal(SharingPair{encMsgBytes})
+	magic_string = string(magicStringBytes)
+	//symEnc for files, PKE for access tokens
+	return magic_string, _
 	return
 }
 
@@ -684,50 +689,50 @@ func (userdata *User) ShareFile(filename string, recipient string) (
 // it is authentically from the sender.
 func (userdata *User) ReceiveFile(filename string, sender string,
 	magic_string string) error {
-	//// unwrap sharingPair and verify it with sender's public key
-	//var sharingPair SharingPair
-	//v := json.Unmarshal([]byte(magic_string), &sharingPair)
-	//if v != nil {
-	//	return errors.New("Json Error")
-	//}
-	//senderSignKey, ok := userlib.KeystoreGet(sender + "vfy")
-	//if !ok {
-	//	return errors.New("Invalid sender")
-	//}
-	//vfy := userlib.dsVerify(senderSignKey, sharingPair.EncMsg, sharingPair.Signature)
-	//if vfy != nil {
-	//	return errors.New("Invalid verification")
-	//}
-	////decrypt message with recipient's private key
-	//var pair Pair
-	//error := json.Unmarshal(sharingPair.EncMsg, &pair)
-	//if error != nil {
-	//	return error
-	//}
-	//fileUUID, error := userlib.pkeDec(userdata.PrivateDecKey, pair.FileUUID)
-	//if error != nil {
-	//	return error
-	//}
-	//fileEncKey, error := userlib.pkeDec(userdata.PrivateDecKey, pair.SymKey)
-	//if error != nil {
-	//	return error
-	//}
-	//fileIV, error := userlib.pkeDec(userdata.PrivateDecKey, pair.IV)
-	//if error != nil {
-	//	return error
-	//}
-	//fileHMAC, error := userlib.pkeDec(userdata.PrivateDecKey, pair.HMAC)
-	//if error != nil {
-	//	return error
-	//}
-	//newPair := Pair{fileUUID, fileEncKey, fileIV, fileHMAC}
-	//accessible, accesserr := userdata.getAccessibleList()
-	//if accesserr != nil {
-	//	return
-	//}
-	//accessible.Shared[filename] = newPair
+	// unwrap sharingPair and verify it with sender's public key
+	var sharingPair SharingPair
+	v := json.Unmarshal([]byte(magic_string), &sharingPair)
+	if v != nil {
+		return errors.New("Json Error")
+	}
+	senderSignKey, ok := userlib.KeystoreGet(sender + "vfy")
+	if !ok {
+		return errors.New("Invalid sender")
+	}
+	vfy := userlib.dsVerify(senderSignKey, sharingPair.EncMsg, sharingPair.Signature)
+	if vfy != nil {
+		return errors.New("Invalid verification")
+	}
+	//decrypt message with recipient's private key
+	var pair Pair
+	error := json.Unmarshal(sharingPair.EncMsg, &pair)
+	if error != nil {
+		return error
+	}
+	fileUUID, error := userlib.pkeDec(userdata.PrivateDecKey, pair.FileUUID)
+	if error != nil {
+		return error
+	}
+	fileEncKey, error := userlib.pkeDec(userdata.PrivateDecKey, pair.SymKey)
+	if error != nil {
+		return error
+	}
+	fileIV, error := userlib.pkeDec(userdata.PrivateDecKey, pair.IV)
+	if error != nil {
+		return error
+	}
+	fileHMAC, error := userlib.pkeDec(userdata.PrivateDecKey, pair.HMAC)
+	if error != nil {
+		return error
+	}
+	newPair := Pair{fileUUID, fileEncKey, fileIV, fileHMAC}
+	accessible, accesserr := userdata.getAccessibleList()
+	if accesserr != nil {
+		return
+	}
+	accessible.Shared[filename] = newPair
 
-	//encryptAndStore(guardian, guardianIV, guardianSymKey, guardianHMAC, guardian.GuardianUUID)
+	encryptAndStore(guardian, guardianIV, guardianSymKey, guardianHMAC, guardian.GuardianUUID)
 
 	//add pair to recipient's accessible.shared
 	//recipient encrypt file with own keys and store on Datastore as well
