@@ -883,5 +883,25 @@ func (userdata *User) ReceiveFile(filename string, sender string,
 
 // Removes target user's access.
 func (userdata *User) RevokeFile(filename string, target_username string) (err error) {
+	accessible, accerr := userdata.getAccessibleList()
+	if accerr != nil {
+		return errors.New("Accessible List error")
+	}
+	pair, ok := accessible.Owned[filename+userdata.Username]
+	if !ok {
+		return errors.New("Can't revoke")
+	}
+	guardian, gerr := userdata.getGuardian(filename, accessible)
+	if gerr != nil {
+		return errors.New("Can't revoke")
+	}
+	_, tok := guardian.AllowedUser[target_username]
+	if tok {
+		delete(guardian.AllowedUser, target_username)
+	} else {
+		return errors.New("No need to revoke")
+	}
+	userlib.DatastoreDelete(guardian.GuardianUUID)
+	encryptAndStore(guardian, pair.IV, pair.SymKey, pair.HMAC, guardian.GuardianUUID)
 	return
 }
