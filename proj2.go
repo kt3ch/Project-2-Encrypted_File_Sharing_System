@@ -646,14 +646,14 @@ func (userdata *User) ShareFile(filename string, recipient string) (
 	//
 	////get file UUID and keys
 	// fileUUID :=
-	//check keystore to see if recipient is valid
-	// rec, ok := userlib.KeystoreGet(recipient)
+	// //check keystore to see if recipient is valid
+	// recipient, ok := userlib.KeystoreGet(recipient)
 	// if !ok {
 	// 	return "", errors.New("Recipient is invalid")
 	// }
 	// //checks if user has access to the file
 	// fileHeader, err := userdata.checkAccessibility(filename)
-	// if err != nil {
+	// if err {
 	// 	return "", errors.New("User doesn't have access to this file")
 	// }
 	//
@@ -676,14 +676,15 @@ func (userdata *User) ShareFile(filename string, recipient string) (
 	// guardian.AllowedUser = append(guardian.AllowedUser, recipient)
 	//
 	// //encrypt pair struct with recipient's public PKE key
-	// encFileUUID, _ := userlib.PKEEnc(recPKEKey, guardianPair.FileUUID)
-	// encFileEncKey, _ := userlib.PKEEnc(recPKEKey, guardianPair.SymKey)
-	// encFileHmacKey, _ := userlib.PKEEnc(recPKEKey, guardianPair.HMAC)
+	// encFileUUID, _ := userlib.pkeEnc(recPKEKey, guardianPair.FileUUID)
+	// encFileEncKey, _ := userlib.pkeEnc(recPKEKey, guardianPair.SymKey)
+	// encFileIV, _ := userlib.pkeEnc(recPKEKey, guardianPair.IV)
+	// encFileHmacKey, _ := userlib.pkeEnc(recPKEKey, guardianPair.HMAC)
 	//
 	// //token generation
-	// accessToken := Pair{encFileUUID, encFileEncKey, encFileHmacKey}
+	// accessToken := Pair{encFileUUID, encFileEncKey, encFileIV, encFileHmacKey}
 	// encMsgBytes, _ := json.Marshal(accessToken)
-	// sig, _ := userlib.DSSign(userdata.PrivateSignKey, encMsgBytes)
+	// sig, _ := userlib.dsSign(userdata.PrivateSignKey, encMsgBytes)
 	// magicStringBytes, _ := json.Marshal(SharingPair{encMsgBytes})
 	// magic_string = string(magicStringBytes)
 	// //symEnc for files, PKE for access tokens
@@ -707,7 +708,7 @@ func (userdata *User) ReceiveFile(filename string, sender string,
 	// if !ok {
 	// 	return errors.New("Invalid sender")
 	// }
-	// vfy := userlib.DSVerify(senderSignKey, sharingPair.EncMsg, sharingPair.Signature)
+	// vfy := userlib.dsVerify(senderSignKey, sharingPair.EncMsg, sharingPair.Signature)
 	// if vfy != nil {
 	// 	return errors.New("Invalid verification")
 	// }
@@ -717,19 +718,23 @@ func (userdata *User) ReceiveFile(filename string, sender string,
 	// if error != nil {
 	// 	return error
 	// }
-	// fileUUID, error := userlib.PKEDec(userdata.PrivateDecKey, pair.FileUUID)
+	// fileUUID, error := userlib.pkeDec(userdata.PrivateDecKey, pair.FileUUID)
 	// if error != nil {
 	// 	return error
 	// }
-	// fileEncKey, error := userlib.PKEDec(userdata.PrivateDecKey, pair.SymKey)
+	// fileEncKey, error := userlib.pkeDec(userdata.PrivateDecKey, pair.SymKey)
 	// if error != nil {
 	// 	return error
 	// }
-	// fileHMAC, error := userlib.PKEDec(userdata.PrivateDecKey, pair.HMAC)
+	// fileIV, error := userlib.pkeDec(userdata.PrivateDecKey, pair.IV)
 	// if error != nil {
 	// 	return error
 	// }
-	// newPair := Pair{fileUUID, fileEncKey, fileHMAC}
+	// fileHMAC, error := userlib.pkeDec(userdata.PrivateDecKey, pair.HMAC)
+	// if error != nil {
+	// 	return error
+	// }
+	// newPair := Pair{fileUUID, fileEncKey, fileIV, fileHMAC}
 	// accessible, accesserr := userdata.getAccessibleList()
 	// if accesserr != nil {
 	// 	return
