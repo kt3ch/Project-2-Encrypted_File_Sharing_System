@@ -11,7 +11,7 @@ import (
 	_ "github.com/google/uuid"
 	"reflect"
 	_ "strconv"
-	_ "strings"
+	 "strings"
 	"testing"
 )
 
@@ -39,6 +39,58 @@ func TestInit(t *testing.T) {
 	// If you want to comment the line above,
 	// write _ = u here to make the compiler happy
 	// You probably want many more tests here.
+}
+
+func TestInitGet(t *testing.T) {
+	//basic functionality tests for Init and GetUser
+	clear()
+	userlib.SetDebugStatus(true)
+	datastore := userlib.DatastoreGetMap()
+	//tests for unique username and multiple instances of a username
+	alice, err := InitUser("alice", "soupcorn!")
+	if alice == nil || err != nil {
+		t.Error(err)
+		return
+	}
+	getAlice1, err := GetUser("alice", "soupcorn!")
+		if getAlice1 == nil || err != nil {
+			t.Error(err)
+			return
+		}
+	getAlice2, err := GetUser("alice", "soupcorn!")
+		if getAlice2 == nil || err != nil {
+			t.Error(err)
+			return
+		}
+	_, err = InitUser("alice", "repeated")
+	if err == nil {
+		t.Error("Username is already taken")
+		return
+	}
+	//tests for correct password
+	_, err = GetUser("alice", "winter")
+	if err ==  nil {
+		t.Error("Password is incorrect")
+		return
+	}
+	_, err = GetUser("bob", "soupcorn!")
+	if err == nil {
+		t.Error("Invalid login credentials")
+		return
+	}
+	//tests for confidential username and password
+	var keys []userlib.UUID
+	var vals [][]byte
+	for k, v := range datastore {
+		keys = append(keys, k)
+		vals = append(vals, v)
+	}
+	for val := range vals {
+		if strings.Contains("alice", string(val)) || strings.Contains("soupcorn!", string(val)) {
+			t.Error("Username or password is not obscured.")
+			return
+		}
+	}
 }
 
 func TestGetUser(t *testing.T) {
