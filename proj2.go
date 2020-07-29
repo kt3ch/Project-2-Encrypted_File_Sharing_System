@@ -434,6 +434,47 @@ func (userdata *User) AppendFile(filename string, data []byte) (err error) {
 	//update file structure
 	//marshal file struct, encrypt, hmac, and store in Datastore
 	//TODO: Append to Tail, would be fast given function I defined below
+	fileHeader, accerr := userdata.checkAccessibility(filename)
+	if accerr != nil {
+		err = errors.New("Access error")
+		return
+	}
+	tailNode, tailerr := fileHeader.decryptFileNode(fileHeader.TailUUID)
+	if tailerr != nil {
+		err = errors.New("Node Access error")
+		return
+	}
+
+	//Set up New node
+	var newNode FileNode
+	newNode.FileNodeUUID = New()
+	newNode.Data = fileHeader.encryptFileNode(data)
+	newNode.NextUUID = Nil
+
+	//Manipulate Linked list
+	tailNode.NextUUID = newNode.FileNodeUUID
+	fileHeader.TailUUID = newNode.FileNodeUUID
+
+	//Store new node
+	encryptAndStore(newNode, fileHeader.NodeEncryptIV, fileHeader.NodeEncryptKey, fileHeader.NodeHMACKey,newNode.FileNodeUUID)
+
+	//Update tailNode
+	userlib.DatastoreDelete(tailNode.FileNodeUUID)
+	encryptAndStore(tailNode, fileHeader.NodeEncryptIV, fileHeader.NodeEncryptKey, fileHeader.NodeHMACKey,tailNode.FileNodeUUID)
+
+	//Update fileHeader
+	acclist, alerr := userdata.getAccessibleList()
+	if alerr != nil {
+		err = errors.New("Append Error")
+		return
+	}
+	guard, gerr := userdata.getGuardian(filename, acclist)
+	if gerr != nil {
+		err = errors.New("Append error")
+	}
+	userlib.DatastoreDelete(fileHeader.FileHeaderUUID)
+	encryptAndStore(fileHeader, guard.EncryptIV, guard.EncryptKey, guard.HMACKey,fileHeader.FileHeaderUUID)
+
 	return
 }
 
