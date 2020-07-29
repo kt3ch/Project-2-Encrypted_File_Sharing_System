@@ -41,6 +41,29 @@ func TestInit(t *testing.T) {
 	// You probably want many more tests here.
 }
 
+func TestGetUser(t *testing.T) {
+	clear()
+	t.Log("Initialization test")
+
+	// You can set this to false!
+	userlib.SetDebugStatus(true)
+
+	u, err := InitUser("alice", "fubar")
+	if err != nil {
+		// t.Error says the test fails
+		t.Error("Failed to initialize user", err)
+		return
+	}
+	// t.Log() only produces output if you run with "go test -v"
+	t.Log("Created user", u)
+	t.Log("Start GetUser test")
+	gu, err := GetUser("alice", "fubar")
+	if err != nil {
+		t.Error("Failed to get user", err)
+		return
+	}
+	t.Log("Get user", reflect.DeepEqual(u, gu))
+}
 func TestInitGet(t *testing.T) {
 	//basic functionality tests for Init and GetUser
 	clear()
@@ -91,30 +114,6 @@ func TestInitGet(t *testing.T) {
 			return
 		}
 	}
-}
-
-func TestGetUser(t *testing.T) {
-	clear()
-	t.Log("Initialization test")
-
-	// You can set this to false!
-	userlib.SetDebugStatus(true)
-
-	u, err := InitUser("alice", "fubar")
-	if err != nil {
-		// t.Error says the test fails
-		t.Error("Failed to initialize user", err)
-		return
-	}
-	// t.Log() only produces output if you run with "go test -v"
-	t.Log("Created user", u)
-	t.Log("Start GetUser test")
-	gu, err := GetUser("alice", "fubar")
-	if err != nil {
-		t.Error("Failed to get user", err)
-		return
-	}
-	t.Log("Get user", reflect.DeepEqual(u, gu))
 }
 
 func TestStorage(t *testing.T) {
