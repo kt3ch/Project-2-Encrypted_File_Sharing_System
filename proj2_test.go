@@ -154,6 +154,39 @@ func TestInvalidFile(t *testing.T) {
 		return
 	}
 }
+func TestUser_AppendFile(t *testing.T) {
+	clear()
+	userlib.SetDebugStatus(true)
+	u, err := InitUser("alice", "fubar")
+	if err != nil {
+		t.Error("Failed to initialize user", err)
+		return
+	}
+
+	v := userlib.RandomBytes(10000)
+	u.StoreFile("file1", v[:9000])
+
+	v2, err2 := u.LoadFile("file1")
+	if err2 != nil {
+		t.Error("Failed to upload and download", err2)
+		return
+	}
+	if !reflect.DeepEqual(v[:9000], v2) {
+		t.Error("Downloaded file is not the same", v)
+		return
+	}
+	err = u.AppendFile("file1", v[9000:])
+	v3, err3 := u.LoadFile("file1")
+	if err3 != nil {
+		t.Error("Failed to upload and download", err2)
+		return
+	}
+	if !reflect.DeepEqual(v, v3) {
+		t.Error("Downloaded Append file is not the same")
+		return
+	}
+
+}
 
 func TestShare(t *testing.T) {
 	clear()
