@@ -398,13 +398,17 @@ func (userdata *User) StoreFile(filename string, data []byte) {
 	return
 }
 
-func encryptAndStore(i interface{}, key []byte, hmac []byte, muuid UUID) {
+func encryptAndStore(i interface{}, key []byte, hmac []byte, muuid UUID) error {
+	if len(key) < userlib.AESKeySize {
+		return errors.New("key size error")
+	}
 	iv := userlib.RandomBytes(userlib.AESBlockSize)
 	marshalled, _ := json.Marshal(i)
 	encrypted := userlib.SymEnc(key, iv, marshalled)
 	hmaced, _ := userlib.HMACEval(hmac, encrypted)
 	encrypted = append(encrypted, hmaced...)
 	userlib.DatastoreSet(muuid, encrypted)
+	return nil
 }
 
 func (userdata *User) overwriteFile(filename string, data []byte) {
@@ -566,9 +570,12 @@ func (userdata *User) getGuardian(filename string, accessible *AccessibleList) (
 	}
 	guardianByte := guardianUnDecrypt[:length-userlib.HashSize]
 	guardianHMAC := guardianUnDecrypt[length-userlib.HashSize:]
-	tag, _ := userlib.HMACEval(guardianUUID.HMAC, guardianByte)
+	if len(guardianUUID.HMAC) != 16 {
+		return nil, errors.New("Hmac error")
+	}
+	tag, tagerr := userlib.HMACEval(guardianUUID.HMAC, guardianByte)
 	guardianHMACed := userlib.HMACEqual(guardianHMAC, tag)
-	if !guardianHMACed {
+	if !guardianHMACed || tagerr != nil {
 		return nil, errors.New("Authentication Failed")
 	}
 	guardianDecrypted := userlib.SymDec(guardianUUID.SymKey, guardianUnDecrypt[:length-userlib.HashSize])
