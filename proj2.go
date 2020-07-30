@@ -115,14 +115,14 @@ type User struct {
 	AccessibleUUID       UUID   //uuid of accessible list
 	AccessibleEncryptKey []byte //Key used to encrypt Accessible List
 	// AccessibleIV         []byte //IV used to encrypt Accessible List
-	AccessibleHMAC       []byte //HMAC used to verify Accessible List
+	AccessibleHMAC []byte //HMAC used to verify Accessible List
 }
 
 type Pair struct {
 	FileUUID UUID
 	SymKey   []byte
 	// IV       []byte
-	HMAC     []byte
+	HMAC []byte
 }
 
 type SharingPair struct {
@@ -142,9 +142,9 @@ type FileHeader struct {
 	HMACKey        []byte //user for verifying the file
 	NodeEncryptKey []byte //used for encrypting FileNode Objects
 	// NodeEncryptIV  []byte //used for encrypting FileNode Objects
-	NodeHMACKey    []byte //used for verifying FileNode objects
-	HeadUUID       UUID   //UUID of the Head FileNode
-	TailUUID       UUID   // UUID of the Tail FileNode
+	NodeHMACKey []byte //used for verifying FileNode objects
+	HeadUUID    UUID   //UUID of the Head FileNode
+	TailUUID    UUID   // UUID of the Tail FileNode
 }
 
 type FileNode struct {
@@ -154,13 +154,13 @@ type FileNode struct {
 }
 
 type Guardian struct {
-	GuardianUUID   UUID            //UUID of this Gurdian object, used in accessible file of user
-	FileHeaderUUID UUID            //UUID of the related FileHeader Object
-	EncryptKey     []byte          //used for encrypting the FileHeader
+	GuardianUUID   UUID   //UUID of this Gurdian object, used in accessible file of user
+	FileHeaderUUID UUID   //UUID of the related FileHeader Object
+	EncryptKey     []byte //used for encrypting the FileHeader
 	// EncryptIV      []byte          //used encrypting the FileHeader
-	HMACKey        []byte          // Used to verify the FileHeader
-	Owner          string          //Only Owner can perform sharing
-	AllowedUser    map[string]bool //Users that are allowed to access this file
+	HMACKey     []byte          // Used to verify the FileHeader
+	Owner       string          //Only Owner can perform sharing
+	AllowedUser map[string]bool //Users that are allowed to access this file
 }
 
 // This creates a user.  It will only be called once for a user
@@ -217,8 +217,6 @@ func InitUser(username string, password string) (userdataptr *User, err error) {
 		//UserStruct Location Key
 		lockey, _ := userlib.HashKDF(masterKey, []byte("Location"))
 		userdata.StructLocation = lockey
-
-
 
 		//IV, encrypt key, and HMAC key related to accessibleList
 		auuid := New()
@@ -368,7 +366,6 @@ func (userdata *User) StoreFile(filename string, data []byte) {
 
 	//Encrypt and authenticate file
 	encryptedFile := fileHeader.encryptFileNode(data)
-	//userlib.DebugMsg("%b", encryptedFile)
 
 	//Create fileNode to store encrypted data
 	var fnode FileNode
@@ -460,7 +457,6 @@ func (fileHeader *FileHeader) encryptFileNode(data []byte) []byte {
 	fileEncrypted := userlib.SymEnc(fileHeader.EncryptKey, iv, data)
 	HMACTag, _ := userlib.HMACEval(fileHeader.HMACKey, data)
 
-	//userlib.DebugMsg("%b", HMACTag)
 	return append(fileEncrypted, HMACTag...)
 }
 
@@ -479,7 +475,6 @@ func (userdata *User) AppendFile(filename string, data []byte) (err error) {
 	fileHeader, accerr := userdata.checkAccessibility(filename)
 	if accerr != nil || fileHeader == nil {
 		//fa, _ := json.Marshal(accerr)
-		userlib.DebugMsg("should print error")
 		return errors.New("Access error")
 	}
 
@@ -661,8 +656,6 @@ func (fileHeader *FileHeader) extractFile(fnode *FileNode) ([]byte, error) {
 	}
 	tag, _ := userlib.HMACEval(fileHeader.HMACKey, fnode.Data[:length-userlib.HashSize])
 	hmac := userlib.HMACEqual(tag, fnode.Data[length-userlib.HashSize:])
-	//userlib.DebugMsg("%b", fnode.Data[length-userlib.HashSize:])
-	//userlib.DebugMsg("%b", fnode.Data)
 	if hmac { //should be !hmac????????????????????????
 		return nil, errors.New("Authentication Failed5")
 	}
@@ -722,9 +715,7 @@ func publicEncrypt(key userlib.PKEEncKey, data []byte) ([]byte, error) {
 		if start+keySize > length {
 			end = length
 		}
-		userlib.DebugMsg("length of encrypted: %d", length)
 		encrypted, encerr := userlib.PKEEnc(key, data[start:end])
-		//userlib.DebugMsg("length after encrypted: %d", len(encrypted))
 		if encerr != nil {
 			//return nil, errors.New("PKE error")
 			return nil, encerr
@@ -744,8 +735,6 @@ func publicDecrypt(key userlib.PKEDecKey, data []byte) ([]byte, error) {
 		if start+keySize > length {
 			end = length
 		}
-		userlib.DebugMsg("length before decrypt : %d %d", start, end)
-		userlib.DebugMsg("length: %d", length)
 		encrypted, encerr := userlib.PKEDec(key, data[start:end])
 		if encerr != nil {
 			//return nil, errors.New("PKE error")
@@ -785,8 +774,12 @@ func (userdata *User) ShareFile(filename string, recipient string) (
 	_ = fileHeader
 
 	accessible, _ := userdata.getAccessibleList()
+	gpair, ok := accessible.Owned[filename+userdata.Username]
+	if !ok {
+		gpair, _ = accessible.Shared[filename+userdata.Username]
+	}
 	guardian, _ = userdata.getGuardian(filename, accessible)
-	guardianPair := Pair{guardian.FileHeaderUUID, guardian.EncryptKey, guardian.HMACKey}
+	guardianPair := Pair{guardian.GuardianUUID, gpair.SymKey, gpair.HMAC}
 
 	//generate access token for recipient, encrypt using PKE
 	recPKEKey, ok := userlib.KeystoreGet(recipient)
@@ -796,11 +789,13 @@ func (userdata *User) ShareFile(filename string, recipient string) (
 
 	//add recipient’s name to AllowedUser map
 	guardian.AllowedUser[recipient] = true
-
+	encryptAndStore(guardian, gpair.SymKey, gpair.HMAC, guardian.GuardianUUID)
 	//token generation
-	accessToken := Pair{guardianPair.FileUUID, guardianPair.SymKey, guardianPair.HMAC}
+	accessToken := guardianPair
 	mAccessToken, err := json.Marshal(accessToken)
+
 	encAccessToken, PKEerr := userlib.PKEEnc(recPKEKey, mAccessToken)
+
 	if PKEerr != nil {
 		return "", errors.New("Error during PKE of SymKey")
 	}
@@ -810,6 +805,7 @@ func (userdata *User) ShareFile(filename string, recipient string) (
 	}
 	magicStringBytes, err := json.Marshal(SharingPair{encAccessToken, sig})
 	magic_string = string(magicStringBytes)
+	userlib.DebugMsg("length of magic string: %d", len(magic_string))
 	return magic_string, err
 }
 
@@ -819,12 +815,14 @@ func (userdata *User) ShareFile(filename string, recipient string) (
 // it is authentically from the sender.
 func (userdata *User) ReceiveFile(filename string, sender string,
 	magic_string string) error {
+	if len(magic_string) < 128 {
+		return errors.New("Magic String Invalid")
+	}
 	send, ok := userlib.KeystoreGet(sender)
 	if !ok {
 		return errors.New("Sender is invalid")
 	}
 	_ = send
-
 	//unwrap sharingPair and verify it with sender's public key
 	var sharingPair SharingPair
 	v := json.Unmarshal([]byte(magic_string), &sharingPair)

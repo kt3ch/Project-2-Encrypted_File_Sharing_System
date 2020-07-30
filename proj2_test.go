@@ -216,6 +216,7 @@ func TestShare(t *testing.T) {
 	}
 
 	magic_string, err = u.ShareFile("file1", "bob")
+	userlib.DebugMsg("Magic string: %d", len(magic_string))
 	if err != nil {
 		t.Error("Failed to share the file", err)
 		return
@@ -568,8 +569,6 @@ func TestAppendBasic(t *testing.T) {
 		return
 	}
 	err1 := user.AppendFile("wrong", []byte{0, 0})
-	jerr1, _ := json.Marshal(err1)
-	userlib.DebugMsg(string(jerr1))
 	if err1 != nil {
 		t.Log("Appended to a file that does not exist.")
 		return
@@ -774,451 +773,454 @@ func TestAppend(t *testing.T) {
 	}
 }
 
-//func TestShareBasic(t *testing.T) {
-//	userlib.SetDebugStatus(false)
-//	userlib.DatastoreClear()
-//	userlib.KeystoreClear()
-//	datastore := userlib.DatastoreGetMap()
-//	keystore := userlib.KeystoreGetMap()
-//	_, _ = datastore, keystore
+func TestShareBasic(t *testing.T) {
+	userlib.SetDebugStatus(false)
+	userlib.DatastoreClear()
+	userlib.KeystoreClear()
+	datastore := userlib.DatastoreGetMap()
+	keystore := userlib.KeystoreGetMap()
+	_, _ = datastore, keystore
+
+	u, err := InitUser("alice", "fubar")
+	if err != nil {
+		t.Error("Failed to initialize alice", err)
+		return
+	}
+	u2, err2 := InitUser("bob", "foobar")
+	if err2 != nil {
+		t.Error("Failed to initialize bob", err2)
+		return
+	}
+
+	file := userlib.RandomBytes(userlib.AESBlockSize)
+	u.StoreFile("file1", file)
+
+	var v2 []byte
+	var magic_string string
+
+	v, err := u.LoadFile("file1")
+	if err != nil {
+		t.Error("Failed to load file1", err)
+		return
+	}
+	magic_string, err = u.ShareFile("file1", "bob")
+	if err != nil {
+		t.Error("Failed to share the a file", err)
+		return
+	}
+	err = u2.ReceiveFile("file2", "alice", magic_string)
+	if err != nil {
+		t.Error("Failed to receive the share message", err)
+		return
+	}
+
+	v2, err = u2.LoadFile("file2")
+	if err != nil {
+		t.Error("Failed to download the file after sharing", err)
+		return
+	}
+	if !reflect.DeepEqual(file, v2) {
+		t.Error("Shared file is not the same", file, v2)
+		return
+	}
+
+	err = u.RevokeFile("file1", "bob")
+	if err != nil {
+		t.Error("Error revoking access", err)
+		return
+	}
+	toAppend := []byte("sleepy")
+	err = u.AppendFile("file1", toAppend)
+	if err != nil {
+		t.Error("Error appending", err)
+	}
+	v3, err := u.LoadFile("file1")
+	v2, err = u2.LoadFile("file2")
+	if reflect.DeepEqual(v3, v2) {
+		t.Error("Bob should no longer have access or updates to file2", v, v2, v3)
+		return
+	}
+
+}
+
 //
-//	u, err := InitUser("alice", "fubar")
-//	if err != nil {
-//		t.Error("Failed to initialize alice", err)
-//		return
-//	}
-//	u2, err2 := InitUser("bob", "foobar")
-//	if err2 != nil {
-//		t.Error("Failed to initialize bob", err2)
-//		return
-//	}
+func TestShareCorruptMagicString(t *testing.T) {
+	userlib.SetDebugStatus(false)
+	userlib.DatastoreClear()
+	userlib.KeystoreClear()
+	datastore := userlib.DatastoreGetMap()
+	keystore := userlib.KeystoreGetMap()
+	_, _ = datastore, keystore
+
+	alice, err := InitUser("alice", "fubar")
+	if err != nil {
+		t.Error("Failed to initialize alice", err)
+		return
+	}
+	bob, err2 := InitUser("bob", "foobar")
+	if err2 != nil {
+		t.Error("Failed to initialize bob", err2)
+		return
+	}
+
+	file := userlib.RandomBytes(userlib.AESBlockSize)
+	alice.StoreFile("file1", file)
+
+	var magic_string string
+
+	_, err = alice.LoadFile("file1")
+	if err != nil {
+		t.Error("Failed to download the file from alice", err)
+		return
+	}
+
+	magic_string, err = alice.ShareFile("file1", "bob")
+	if err != nil {
+		t.Error("Failed to share the a file", err)
+		return
+	}
+	var msg string
+
+	// Slicing
+	for i := 1; i < len(magic_string); i += 5 {
+		msg = magic_string[:i]
+		err = bob.ReceiveFile("file2", "alice", msg)
+		if err == nil {
+			t.Error("Manipulation of magic string should've errored")
+			return
+		}
+		msg = magic_string[:(i/2)] + magic_string[(len(magic_string)-(i/2)):]
+		err = bob.ReceiveFile("file2", "alice", msg)
+		if err == nil {
+			t.Error("Manipulation of magic string should've errored")
+			return
+		}
+		msg = magic_string[:i] + string(userlib.RandomBytes(i)) + magic_string[i:]
+		err = bob.ReceiveFile("file2", "alice", msg)
+		if err == nil {
+			t.Error("Manipulation of magic string should've errored")
+			return
+		}
+	}
+
+	// Random sharing string that isn't magic_string
+	msg = string(userlib.RandomBytes(len(magic_string)))
+	for msg == magic_string {
+		msg = string(userlib.RandomBytes(len(magic_string)))
+	}
+	err = bob.ReceiveFile("file2", "alice", msg)
+	if err == nil {
+		t.Error("Random magic string should've errored")
+		return
+	}
+
+	// Passing in empty sharing string
+	msg = ""
+	err = bob.ReceiveFile("file2", "alice", msg)
+	if err == nil {
+		t.Error("Empty magic string should've errored")
+		return
+	}
+}
+
 //
-//	file := userlib.RandomBytes(userlib.AESBlockSize)
-//	u.StoreFile("file1", file)
-//
-//	var v2 []byte
-//	var magic_string string
-//
-//	v, err := u.LoadFile("file1")
-//	if err != nil {
-//		t.Error("Failed to load file1", err)
-//		return
-//	}
-//	magic_string, err = u.ShareFile("file1", "bob")
-//	if err != nil {
-//		t.Error("Failed to share the a file", err)
-//		return
-//	}
-//	err = u2.ReceiveFile("file2", "alice", magic_string)
-//	if err != nil {
-//		t.Error("Failed to receive the share message", err)
-//		return
-//	}
-//
-//	v2, err = u2.LoadFile("file2")
-//	if err != nil {
-//		t.Error("Failed to download the file after sharing", err)
-//		return
-//	}
-//	if !reflect.DeepEqual(file, v2) {
-//		t.Error("Shared file is not the same", file, v2)
-//		return
-//	}
-//
-//	err = u.RevokeFile("file1")
-//	if err != nil {
-//		t.Error("Error revoking access", err)
-//		return
-//	}
-//	toAppend := []byte("sleepy")
-//	err = u.AppendFile("file1", toAppend)
-//	if err != nil {
-//		t.Error("Error appending", err)
-//	}
-//	v3, err := u.LoadFile("file1")
-//	v2, err = u2.LoadFile("file2")
-//	if reflect.DeepEqual(v3, v2) {
-//		t.Error("Bob should no longer have access or updates to file2", v, v2, v3)
-//		return
-//	}
-//
-//}
-//
-//func TestShareCorruptMagicString(t *testing.T) {
-//	userlib.SetDebugStatus(false)
-//	userlib.DatastoreClear()
-//	userlib.KeystoreClear()
-//	datastore := userlib.DatastoreGetMap()
-//	keystore := userlib.KeystoreGetMap()
-//	_, _ = datastore, keystore
-//
-//	alice, err := InitUser("alice", "fubar")
-//	if err != nil {
-//		t.Error("Failed to initialize alice", err)
-//		return
-//	}
-//	bob, err2 := InitUser("bob", "foobar")
-//	if err2 != nil {
-//		t.Error("Failed to initialize bob", err2)
-//		return
-//	}
-//
-//	file := userlib.RandomBytes(userlib.AESBlockSize)
-//	alice.StoreFile("file1", file)
-//
-//	var magic_string string
-//
-//	_, err = alice.LoadFile("file1")
-//	if err != nil {
-//		t.Error("Failed to download the file from alice", err)
-//		return
-//	}
-//
-//	magic_string, err = alice.ShareFile("file1", "bob")
-//	if err != nil {
-//		t.Error("Failed to share the a file", err)
-//		return
-//	}
-//	var msg string
-//
-//	// Slicing
-//	for i := 1; i < len(magic_string); i += 5 {
-//		msg = magic_string[:i]
-//		err = bob.ReceiveFile("file2", "alice", msg)
-//		if err == nil {
-//			t.Error("Manipulation of magic string should've errored")
-//			return
-//		}
-//		msg = magic_string[:(i/2)] + magic_string[(len(magic_string)-(i/2)):]
-//		err = bob.ReceiveFile("file2", "alice", msg)
-//		if err == nil {
-//			t.Error("Manipulation of magic string should've errored")
-//			return
-//		}
-//		msg = magic_string[:i] + string(userlib.RandomBytes(i)) + magic_string[i:]
-//		err = bob.ReceiveFile("file2", "alice", msg)
-//		if err == nil {
-//			t.Error("Manipulation of magic string should've errored")
-//			return
-//		}
-//	}
-//
-//	// Random sharing string that isn't magic_string
-//	msg = string(userlib.RandomBytes(len(magic_string)))
-//	for msg == magic_string {
-//		msg = string(userlib.RandomBytes(len(magic_string)))
-//	}
-//	err = bob.ReceiveFile("file2", "alice", msg)
-//	if err == nil {
-//		t.Error("Random magic string should've errored")
-//		return
-//	}
-//
-//	// Passing in empty sharing string
-//	msg = ""
-//	err = bob.ReceiveFile("file2", "alice", msg)
-//	if err == nil {
-//		t.Error("Empty magic string should've errored")
-//		return
-//	}
-//}
-//
-//func TestShareUsernameMixup(t *testing.T) {
-//	userlib.SetDebugStatus(false)
-//	userlib.DatastoreClear()
-//	userlib.KeystoreClear()
-//	datastore := userlib.DatastoreGetMap()
-//	keystore := userlib.KeystoreGetMap()
-//	_, _ = datastore, keystore
-//
-//	alice, err := InitUser("alice", "fubar")
-//	if err != nil {
-//		t.Error("Failed to initialize alice", err)
-//		return
-//	}
-//	bob, err2 := InitUser("bob", "foobar")
-//	if err2 != nil {
-//		t.Error("Failed to initialize bob", err2)
-//		return
-//	}
-//	carol, err3 := InitUser("carol", "yesterday")
-//	if err3 != nil {
-//		t.Error("Failed to initialize bob", err2)
-//		return
-//	}
-//
-//	file1 := userlib.RandomBytes(userlib.AESBlockSize)
-//	alice.StoreFile("file1", file1)
-//
-//	var v, v2 []byte
-//	var magic_string string
-//
-//	v, err = alice.LoadFile("file1")
-//	magic_string, err = alice.ShareFile("file1", "bob")
-//	if err != nil {
-//		t.Error("Failed to share the a file", err)
-//		return
-//	}
-//	// Bob can get it
-//	err = bob.ReceiveFile("file2", "alice", magic_string)
-//	if err != nil {
-//		t.Error("Failed to receive the share message", err)
-//		return
-//	}
-//	// Carol can't
-//	err = carol.ReceiveFile("file2", "alice", magic_string)
-//	if err == nil {
-//		t.Error("Failed to error with wrong recipient", err)
-//		return
-//	}
-//
-//	// Bob got it
-//	v2, err = bob.LoadFile("file2")
-//	if err != nil {
-//		t.Error("Failed to download the file after sharing", err)
-//		return
-//	}
-//	if !reflect.DeepEqual(v, v2) {
-//		t.Error("Shared file is not the same", v, v2)
-//		return
-//	}
-//
-//	// Carol what are you doing? You don't have access!
-//	_, err = carol.LoadFile("file2")
-//	if err != nil {
-//		t.Error("Should error since Carol shouldn't have this filename", err)
-//		return
-//	}
-//
-//	// Typo in sender name
-//	err = bob.ReceiveFile("file2", "alLice", magic_string)
-//	if err == nil {
-//		t.Error("Typo in sender username", err)
-//		return
-//	}
-//
-//	// Typo in recipient name.
-//	magic_string, err = alice.ShareFile("file1", "boob")
-//	if err == nil {
-//		t.Error("Can't share with a nonexistent user.", err)
-//		return
-//	}
-//	err = bob.ReceiveFile("file2", "alice", magic_string)
-//	if err == nil {
-//		t.Error("Bob shouldn't have received access", err)
-//		return
-//	}
-//}
-//
-//func TestShareFilenameMixup(t *testing.T) {
-//	userlib.SetDebugStatus(false)
-//	userlib.DatastoreClear()
-//	userlib.KeystoreClear()
-//	datastore := userlib.DatastoreGetMap()
-//	keystore := userlib.KeystoreGetMap()
-//	_, _ = datastore, keystore
-//
-//	alice, err := InitUser("alice", "fubar")
-//	if err != nil {
-//		t.Error("Failed to initialize alice", err)
-//		return
-//	}
-//	bob, err2 := InitUser("bob", "foobar")
-//	if err2 != nil {
-//		t.Error("Failed to initialize bob", err2)
-//		return
-//	}
-//	carol, err3 := InitUser("carol", "yesterday")
-//	if err3 != nil {
-//		t.Error("Failed to initialize bob", err3)
-//		return
-//	}
-//
-//	file1 := userlib.RandomBytes(userlib.AESBlockSize)
-//	alice.StoreFile("file1", file1)
-//
-//	file2 := userlib.RandomBytes(userlib.AESBlockSize * 2)
-//	bob.StoreFile("file2", file2)
-//
-//	file3 := userlib.RandomBytes(userlib.AESBlockSize * 3)
-//	carol.StoreFile("file3", file3)
-//
-//	_, err = alice.ShareFile("file2", "bob")
-//	if err == nil {
-//		t.Error("Can't share a file you don't have")
-//		return
-//	}
-//	_, err = alice.ShareFile("file3", "bob")
-//	if err == nil {
-//		t.Error("Can't share a file you don't have")
-//		return
-//	}
-//	_, err = bob.ShareFile("file1", "alice")
-//	if err == nil {
-//		t.Error("Can't share a file you don't have")
-//		return
-//	}
-//	_, err = bob.ShareFile("file3", "alice")
-//	if err == nil {
-//		t.Error("Can't share a file you don't have")
-//		return
-//	}
-//	_, err = carol.ShareFile("file1", "alice")
-//	if err == nil {
-//		t.Error("Can't share a file you don't have")
-//		return
-//	}
-//
-//	var magic_string string
-//	magic_string, err = alice.ShareFile("file1", "carol")
-//	if err != nil {
-//		t.Error("Failed to share", err)
-//		return
-//	}
-//	err = carol.ReceiveFile("area51", "alice", magic_string)
-//	if err != nil {
-//		t.Error("Sharing failed")
-//		return
-//	}
-//}
-//
-//func TestShareIntegration(t *testing.T) {
-//	userlib.SetDebugStatus(false)
-//	userlib.DatastoreClear()
-//	userlib.KeystoreClear()
-//
-//	alice, err := InitUser("alice", "fubar")
-//	if err != nil {
-//		t.Error("Failed to initialize alice", err)
-//		return
-//	}
-//	bob, err2 := InitUser("bob", "foobar")
-//	if err2 != nil {
-//		t.Error("Failed to initialize bob", err2)
-//		return
-//	}
-//	carol, err3 := InitUser("carol", "23lkrDSadfj?sdlkfj3")
-//	if err3 != nil {
-//		t.Error("Failed to initialize bob", err3)
-//		return
-//	}
-//
-//	file := []byte("AS A MEMBER OF THE GREEK COMMUNITY AND PART OF ONE OF THESE ORGANIZATIONS, " +
-//		"THIS IS HIGHLY OFFENSIVE. SORORITIES AT UC BERKELEY MAKE IT THEIR GOAL TO GIVE " +
-//		"WOMEN A PLACE TO FEEL COMFORTABLE AS WELL AS BETTER THE COMMUNITY. COMPARING " +
-//		"SPECIFIC HOUSES TO CHARACTERS FROM A MOVIE ABOUT BULLYING IS ABSURD AND BEYON" +
-//		"D INACCURATE. MAKING THE CLAIM THAT SORORITIES ARE CLIQUES IS DEMEANING THE S" +
-//		"ISTERHOOD AND VALUES THAT THEY ARE FOUNDED ON. THIS CLEARLY IS A STAB AT A CO" +
-//		"MMUNITY ON CAMPUS THAT DOES NOTHING BUT SUPPORT THE REST OF THE STUDENT BODY.")
-//
-//	alice.StoreFile("F", file)
-//	var ms1, ms2 string
-//	ms1, err = alice.ShareFile("F", "bob")
-//	if err != nil {
-//		t.Error(err)
-//		return
-//	}
-//	err = bob.ReceiveFile("memes", "alice", ms1)
-//	if err != nil {
-//		t.Error(err)
-//		return
-//	}
-//	ms2, err = bob.ShareFile("memes", "carol")
-//	if err != nil {
-//		t.Error(err)
-//		return
-//	}
-//	err = carol.ReceiveFile("lol", "alice", ms2)
-//	if err == nil {
-//		t.Error("Sender was bob, not alice. Should've errored")
-//		return
-//	}
-//	err = carol.ReceiveFile("lol", "bob", ms2)
-//	if err != nil {
-//		t.Error("Sharing failed", err)
-//		return
-//	}
-//
-//	toAppend := []byte("UC Berkeley loses ranking due to misreporting of donations.")
-//	newFile := append(file, toAppend...)
-//	err = carol.AppendFile("lol", toAppend)
-//	if err != nil {
-//		t.Error(err)
-//		return
-//	}
-//	var a, b, c []byte
-//	a, err = alice.LoadFile("F")
-//	if err != nil || !reflect.DeepEqual(a, newFile) {
-//		t.Error("Updates not loaded")
-//		return
-//	}
-//	b, err = bob.LoadFile("memes")
-//	if err != nil || !reflect.DeepEqual(b, newFile) {
-//		t.Error("Updates not loaded")
-//		return
-//	}
-//	c, err = carol.LoadFile("lol")
-//	if err != nil || !reflect.DeepEqual(c, newFile) {
-//		t.Error("Updates not loaded")
-//		return
-//	}
-//
-//	err = alice.RevokeFile("F")
-//	if err != nil {
-//		t.Error(err)
-//		return
-//	}
-//	toAppend = []byte("UCBMFET")
-//	newFile = append(newFile, toAppend...)
-//	err = bob.AppendFile("memes", toAppend)
-//	if err == nil {
-//		t.Error("Bob should not have been able to update the file")
-//		return
-//	}
-//	err = carol.AppendFile("lol", toAppend)
-//	if err == nil {
-//		t.Error("Carol should not have been able to update the file")
-//		return
-//	}
-//
-//	err = alice.AppendFile("F", toAppend)
-//	if err != nil {
-//		t.Error(err)
-//		return
-//	}
-//
-//	b, _ = bob.LoadFile("memes")
-//	if reflect.DeepEqual(b, newFile) {
-//		t.Error("Bob should not be able to see updates from Alice's revoke call")
-//		return
-//	}
-//	c, _ = carol.LoadFile("lol")
-//	if reflect.DeepEqual(c, newFile) {
-//		t.Error("Carol should not be able to see updates from Alice's revoke call")
-//		return
-//	}
-//
-//	err = bob.ReceiveFile("me", "alice", ms1)
-//	if err != nil {
-//		t.Error(err)
-//		return
-//	}
-//	c, _ = bob.LoadFile("me")
-//	if reflect.DeepEqual(c, newFile) {
-//		t.Error("Bob should not be able to regain access")
-//		return
-//	}
-//	err = carol.ReceiveFile("lol", "bob", ms2)
-//	if err != nil {
-//		t.Error(err)
-//		return
-//	}
-//	c, _ = carol.LoadFile("lol")
-//	if reflect.DeepEqual(c, newFile) {
-//		t.Error("Carol should not be able to regain access")
-//		return
-//	}
-//}
+func TestShareUsernameMixup(t *testing.T) {
+	userlib.SetDebugStatus(false)
+	userlib.DatastoreClear()
+	userlib.KeystoreClear()
+	datastore := userlib.DatastoreGetMap()
+	keystore := userlib.KeystoreGetMap()
+	_, _ = datastore, keystore
+
+	alice, err := InitUser("alice", "fubar")
+	if err != nil {
+		t.Error("Failed to initialize alice", err)
+		return
+	}
+	bob, err2 := InitUser("bob", "foobar")
+	if err2 != nil {
+		t.Error("Failed to initialize bob", err2)
+		return
+	}
+	carol, err3 := InitUser("carol", "yesterday")
+	if err3 != nil {
+		t.Error("Failed to initialize bob", err2)
+		return
+	}
+
+	file1 := userlib.RandomBytes(userlib.AESBlockSize)
+	alice.StoreFile("file1", file1)
+
+	var v, v2 []byte
+	var magic_string string
+
+	v, err = alice.LoadFile("file1")
+	magic_string, err = alice.ShareFile("file1", "bob")
+	if err != nil {
+		t.Error("Failed to share the a file", err)
+		return
+	}
+	// Bob can get it
+	err = bob.ReceiveFile("file2", "alice", magic_string)
+	if err != nil {
+		t.Error("Failed to receive the share message", err)
+		return
+	}
+	// Carol can't
+	err = carol.ReceiveFile("file2", "alice", magic_string)
+	if err == nil {
+		t.Error("Failed to error with wrong recipient", err)
+		return
+	}
+
+	// Bob got it
+	v2, err = bob.LoadFile("file2")
+	if err != nil {
+		t.Error("Failed to download the file after sharing", err)
+		return
+	}
+	if !reflect.DeepEqual(v, v2) {
+		t.Error("Shared file is not the same", v, v2)
+		return
+	}
+
+	// Carol what are you doing? You don't have access!
+	_, err = carol.LoadFile("file2")
+	if err != nil {
+		t.Error("Should error since Carol shouldn't have this filename", err)
+		return
+	}
+
+	// Typo in sender name
+	err = bob.ReceiveFile("file2", "alLice", magic_string)
+	if err == nil {
+		t.Error("Typo in sender username", err)
+		return
+	}
+
+	// Typo in recipient name.
+	magic_string, err = alice.ShareFile("file1", "boob")
+	if err == nil {
+		t.Error("Can't share with a nonexistent user.", err)
+		return
+	}
+	err = bob.ReceiveFile("file2", "alice", magic_string)
+	if err == nil {
+		t.Error("Bob shouldn't have received access", err)
+		return
+	}
+}
+
+func TestShareFilenameMixup(t *testing.T) {
+	userlib.SetDebugStatus(false)
+	userlib.DatastoreClear()
+	userlib.KeystoreClear()
+	datastore := userlib.DatastoreGetMap()
+	keystore := userlib.KeystoreGetMap()
+	_, _ = datastore, keystore
+
+	alice, err := InitUser("alice", "fubar")
+	if err != nil {
+		t.Error("Failed to initialize alice", err)
+		return
+	}
+	bob, err2 := InitUser("bob", "foobar")
+	if err2 != nil {
+		t.Error("Failed to initialize bob", err2)
+		return
+	}
+	carol, err3 := InitUser("carol", "yesterday")
+	if err3 != nil {
+		t.Error("Failed to initialize bob", err3)
+		return
+	}
+
+	file1 := userlib.RandomBytes(userlib.AESBlockSize)
+	alice.StoreFile("file1", file1)
+
+	file2 := userlib.RandomBytes(userlib.AESBlockSize * 2)
+	bob.StoreFile("file2", file2)
+
+	file3 := userlib.RandomBytes(userlib.AESBlockSize * 3)
+	carol.StoreFile("file3", file3)
+
+	_, err = alice.ShareFile("file2", "bob")
+	if err == nil {
+		t.Error("Can't share a file you don't have")
+		return
+	}
+	_, err = alice.ShareFile("file3", "bob")
+	if err == nil {
+		t.Error("Can't share a file you don't have")
+		return
+	}
+	_, err = bob.ShareFile("file1", "alice")
+	if err == nil {
+		t.Error("Can't share a file you don't have")
+		return
+	}
+	_, err = bob.ShareFile("file3", "alice")
+	if err == nil {
+		t.Error("Can't share a file you don't have")
+		return
+	}
+	_, err = carol.ShareFile("file1", "alice")
+	if err == nil {
+		t.Error("Can't share a file you don't have")
+		return
+	}
+
+	var magic_string string
+	magic_string, err = alice.ShareFile("file1", "carol")
+	if err != nil {
+		t.Error("Failed to share", err)
+		return
+	}
+	err = carol.ReceiveFile("area51", "alice", magic_string)
+	if err != nil {
+		t.Error("Sharing failed")
+		return
+	}
+}
+
+func TestShareIntegration(t *testing.T) {
+	userlib.SetDebugStatus(false)
+	userlib.DatastoreClear()
+	userlib.KeystoreClear()
+
+	alice, err := InitUser("alice", "fubar")
+	if err != nil {
+		t.Error("Failed to initialize alice", err)
+		return
+	}
+	bob, err2 := InitUser("bob", "foobar")
+	if err2 != nil {
+		t.Error("Failed to initialize bob", err2)
+		return
+	}
+	carol, err3 := InitUser("carol", "23lkrDSadfj?sdlkfj3")
+	if err3 != nil {
+		t.Error("Failed to initialize bob", err3)
+		return
+	}
+
+	file := []byte("AS A MEMBER OF THE GREEK COMMUNITY AND PART OF ONE OF THESE ORGANIZATIONS, " +
+		"THIS IS HIGHLY OFFENSIVE. SORORITIES AT UC BERKELEY MAKE IT THEIR GOAL TO GIVE " +
+		"WOMEN A PLACE TO FEEL COMFORTABLE AS WELL AS BETTER THE COMMUNITY. COMPARING " +
+		"SPECIFIC HOUSES TO CHARACTERS FROM A MOVIE ABOUT BULLYING IS ABSURD AND BEYON" +
+		"D INACCURATE. MAKING THE CLAIM THAT SORORITIES ARE CLIQUES IS DEMEANING THE S" +
+		"ISTERHOOD AND VALUES THAT THEY ARE FOUNDED ON. THIS CLEARLY IS A STAB AT A CO" +
+		"MMUNITY ON CAMPUS THAT DOES NOTHING BUT SUPPORT THE REST OF THE STUDENT BODY.")
+
+	alice.StoreFile("F", file)
+	var ms1, ms2 string
+	ms1, err = alice.ShareFile("F", "bob")
+	if err != nil {
+		t.Error(err)
+		return
+	}
+	err = bob.ReceiveFile("memes", "alice", ms1)
+	if err != nil {
+		t.Error(err)
+		return
+	}
+	ms2, err = bob.ShareFile("memes", "carol")
+	if err != nil {
+		t.Error(err)
+		return
+	}
+	err = carol.ReceiveFile("lol", "alice", ms2)
+	if err == nil {
+		t.Error("Sender was bob, not alice. Should've errored")
+		return
+	}
+	err = carol.ReceiveFile("lol", "bob", ms2)
+	if err != nil {
+		t.Error("Sharing failed", err)
+		return
+	}
+
+	toAppend := []byte("UC Berkeley loses ranking due to misreporting of donations.")
+	newFile := append(file, toAppend...)
+	err = carol.AppendFile("lol", toAppend)
+	if err != nil {
+		t.Error(err)
+		return
+	}
+	var a, b, c []byte
+	a, err = alice.LoadFile("F")
+	if err != nil || !reflect.DeepEqual(a, newFile) {
+		t.Error("Updates not loaded")
+		return
+	}
+	b, err = bob.LoadFile("memes")
+	if err != nil || !reflect.DeepEqual(b, newFile) {
+		t.Error("Updates not loaded")
+		return
+	}
+	c, err = carol.LoadFile("lol")
+	if err != nil || !reflect.DeepEqual(c, newFile) {
+		t.Error("Updates not loaded")
+		return
+	}
+
+	err = alice.RevokeFile("F", "carol")
+	if err != nil {
+		t.Error(err)
+		return
+	}
+	toAppend = []byte("UCBMFET")
+	newFile = append(newFile, toAppend...)
+	err = bob.AppendFile("memes", toAppend)
+	if err == nil {
+		t.Error("Bob should not have been able to update the file")
+		return
+	}
+	err = carol.AppendFile("lol", toAppend)
+	if err == nil {
+		t.Error("Carol should not have been able to update the file")
+		return
+	}
+
+	err = alice.AppendFile("F", toAppend)
+	if err != nil {
+		t.Error(err)
+		return
+	}
+
+	b, _ = bob.LoadFile("memes")
+	if reflect.DeepEqual(b, newFile) {
+		t.Error("Bob should not be able to see updates from Alice's revoke call")
+		return
+	}
+	c, _ = carol.LoadFile("lol")
+	if reflect.DeepEqual(c, newFile) {
+		t.Error("Carol should not be able to see updates from Alice's revoke call")
+		return
+	}
+
+	err = bob.ReceiveFile("me", "alice", ms1)
+	if err != nil {
+		t.Error(err)
+		return
+	}
+	c, _ = bob.LoadFile("me")
+	if reflect.DeepEqual(c, newFile) {
+		t.Error("Bob should not be able to regain access")
+		return
+	}
+	err = carol.ReceiveFile("lol", "bob", ms2)
+	if err != nil {
+		t.Error(err)
+		return
+	}
+	c, _ = carol.LoadFile("lol")
+	if reflect.DeepEqual(c, newFile) {
+		t.Error("Carol should not be able to regain access")
+		return
+	}
+}
+
 //
 //func TestStuffAfterRevoke(t *testing.T) {
 //	userlib.SetDebugStatus(false)
