@@ -217,7 +217,7 @@ func TestShare(t *testing.T) {
 
 	magic_string, err = u.ShareFile("file1", "bob")
 	if err != nil {
-		t.Error("Failed to share the a file", err)
+		t.Error("Failed to share the file", err)
 		return
 	}
 	err = u2.ReceiveFile("file2", "alice", magic_string)
