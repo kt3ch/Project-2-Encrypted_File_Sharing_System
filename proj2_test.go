@@ -1,11 +1,7 @@
 package proj2
 
-// You MUST NOT change what you import.  If you add ANY additional
-// imports it will break the autograder, and we will be Very Upset.
-
 import (
 	_ "encoding/hex"
-	_"encoding/json"
 	_ "encoding/json"
 	_ "errors"
 	"github.com/cs161-staff/userlib"
@@ -13,9 +9,12 @@ import (
 	"reflect"
 	_ "strconv"
 	"strings"
+	_ "strings"
 	"testing"
-	"time"
 )
+
+// You MUST NOT change what you import.  If you add ANY additional
+// imports it will break the autograder, and we will be Very Upset.
 
 func clear() {
 	// Wipes the storage so one test does not affect another
@@ -240,7 +239,7 @@ func TestShare(t *testing.T) {
 }
 
 // More comprehensive test on Init and GetUser
-func TestInitAndGetPt2 (t *testing.T) {
+func TestInitAndGetPt2(t *testing.T) {
 	userlib.SetDebugStatus(false)
 	clear()
 
@@ -339,102 +338,184 @@ func TestStoreAndShare(t *testing.T) {
 	}
 }
 
+func TestTrickyUsername(t *testing.T) {
+	clear()
+	t.Log("Initialization test")
 
+	// You can set this to false!
+	userlib.SetDebugStatus(true)
 
+	u, err := InitUser("alice", "fubar")
+	if err != nil {
+		// t.Error says the test fails
+		t.Error("Failed to initialize user", err)
+		return
+	}
+	// t.Log() only produces output if you run with "go test -v"
+	t.Log("Created user", u)
+	t.Log("Start GetUser test")
+	_, err = GetUser("alicef", "ubar")
+	if err == nil {
+		t.Error("Should Not get", err)
+		return
+	}
+	t.Log("Test pass:", err)
+}
 
+func TestCorruptedUser(t *testing.T) {
+	userlib.SetDebugStatus(false)
+	userlib.DatastoreClear()
+	userlib.KeystoreClear()
+	datastore := userlib.DatastoreGetMap()
+	//keystore := userlib.KeystoreGetMap()
+	u, err := InitUser("alice", "fubar")
+	if err != nil {
+		t.Error("Failed to initialize alice", err)
+		return
+	}
+	datastore[u.UserUUID] = userlib.RandomBytes(len(datastore[u.UserUUID]))
+	_, err = GetUser("alice", "fubar")
+	if err == nil {
+		t.Error("Should not get user when user is tampered")
+		return
+	}
+	t.Log("safe")
+}
 
+func TestShareComplicate(t *testing.T) {
+	userlib.SetDebugStatus(false)
+	userlib.DatastoreClear()
+	userlib.KeystoreClear()
+	//datastore := userlib.DatastoreGetMap()
+	//keystore := userlib.KeystoreGetMap()
+	u, err := InitUser("alice", "fubar")
+	if err != nil {
+		t.Error("Failed to initialize alice", err)
+		return
+	}
+	u2, err2 := InitUser("bob", "foobar")
+	if err2 != nil {
+		t.Error("Failed to initialize bob", err2)
+		return
+	}
+	file := userlib.RandomBytes(1000)
+	u.StoreFile("file1", file[:800])
+	magic_string, err := u.ShareFile("file1", "bob")
+	if err != nil {
+		t.Error("Failed to store or share", err)
+		return
+	}
+	err = u2.ReceiveFile("file1", "alice", magic_string)
+	if err != nil {
+		t.Error("Failed to receive", err)
+		return
+	}
+	f1, err1 := u2.LoadFile("file1")
+	if err1 != nil || !reflect.DeepEqual(f1, file[:800]) {
+		t.Error("Loadfile error")
+		return
+	}
+	u.AppendFile("file1", file[800:])
+	f1, err1 = u2.LoadFile("file1")
+	if err1 != nil || !reflect.DeepEqual(f1, file) {
+		t.Error("Loadfile error")
+		return
+	}
+	u.RevokeFile("file1", "bob")
+	fr, errR := u2.LoadFile("file1")
+	if errR == nil || reflect.DeepEqual(fr, file) {
+		t.Error("Shouldn't be accessible")
+		return
+	}
+}
 
 //
-//func TestStuffAfterRevoke(t *testing.T) {
-//	userlib.SetDebugStatus(false)
-//	userlib.DatastoreClear()
-//	userlib.KeystoreClear()
-//	datastore := userlib.DatastoreGetMap()
-//	keystore := userlib.KeystoreGetMap()
-//	_, _ = datastore, keystore
-//
-//	u, err := InitUser("alice", "fubar")
-//	if err != nil {
-//		t.Error("Failed to initialize alice", err)
-//		return
-//	}
-//	u2, err2 := InitUser("bob", "foobar")
-//	if err2 != nil {
-//		t.Error("Failed to initialize bob", err2)
-//		return
-//	}
-//
-//	file := userlib.RandomBytes(userlib.AESBlockSize)
-//	u.StoreFile("file1", file)
-//
-//	magic_string, err := u.ShareFile("file1", "bob")
-//	if err != nil {
-//		t.Error("Failed to share the a file", err)
-//		return
-//	}
-//	err = u2.ReceiveFile("file2", "alice", magic_string)
-//	if err != nil {
-//		t.Error("Failed to receive the share message", err)
-//		return
-//	}
-//
-//	v2, err := u2.LoadFile("file2")
-//	if err != nil {
-//		t.Error("Failed to download the file after sharing", err)
-//		return
-//	}
-//	if !reflect.DeepEqual(file, v2) {
-//		t.Error("Shared file is not the same", file, v2)
-//		return
-//	}
-//
-//	err = u.RevokeFile("file1")
-//	if err != nil {
-//		t.Error("Revoke failed")
-//	}
-//
-//	file2, err := u2.LoadFile("file2")
-//	if err != nil || reflect.DeepEqual(file2, file) {
-//		t.Error("Loaded a file that was revoked")
-//		return
-//	}
-//
-//	magic_string, err = u.ShareFile("file1", "bob")
-//	if err != nil {
-//		t.Error("Failed to share the a file", err)
-//		return
-//	}
-//	err = u2.ReceiveFile("file2", "alice", magic_string)
-//	if err != nil {
-//		t.Error("Failed to receive the share message", err)
-//		return
-//	}
-//
-//	toAppend := userlib.RandomBytes(userlib.AESBlockSize)
-//
-//	err = u.AppendFile("file1", toAppend)
-//	if err != nil {
-//		t.Error(err)
-//		return
-//	}
-//
-//	file2, err = u2.LoadFile("file2")
-//	if err != nil || file2 == nil {
-//		t.Error("Failed to load a shared file")
-//		return
-//	}
-//	if !reflect.DeepEqual(file2, append(file, toAppend...)) {
-//		t.Error("Receiver cannot view edits to shared file.")
-//	}
-//
-//	err = u.RevokeFile("file1")
-//	if err != nil {
-//		t.Error("Revoke failed")
-//	}
-//
-//	err = u2.AppendFile("file2", toAppend)
-//	if err == nil {
-//		t.Error("Able to append to a revoked file")
-//		return
-//	}
-//}
+func TestStuffAfterRevoke(t *testing.T) {
+	userlib.SetDebugStatus(false)
+	userlib.DatastoreClear()
+	userlib.KeystoreClear()
+	datastore := userlib.DatastoreGetMap()
+	keystore := userlib.KeystoreGetMap()
+	_, _ = datastore, keystore
+
+	u, err := InitUser("alice", "fubar")
+	if err != nil {
+		t.Error("Failed to initialize alice", err)
+		return
+	}
+	u2, err2 := InitUser("bob", "foobar")
+	if err2 != nil {
+		t.Error("Failed to initialize bob", err2)
+		return
+	}
+
+	file := userlib.RandomBytes(1000)
+	u.StoreFile("file1", file)
+	magic_string, err := u.ShareFile("file1", "bob")
+	if err != nil {
+		t.Error("Failed to share the a file", err)
+		return
+	}
+	err = u2.ReceiveFile("file2", "alice", magic_string)
+	if err != nil {
+		t.Error("Failed to receive the share message", err)
+		return
+	}
+
+	v2, err := u2.LoadFile("file2")
+	if err != nil || !reflect.DeepEqual(file, v2) {
+		t.Error("Failed to download the same file after sharing", err)
+		return
+	}
+
+	err = u.RevokeFile("file1", "bob")
+	if err != nil {
+		t.Error("Revoke failed")
+	}
+
+	file2, err := u2.LoadFile("file1")
+	if err == nil || reflect.DeepEqual(file2, file) {
+		t.Error("Loaded a file that was revoked")
+		return
+	}
+
+	magic_string, err = u.ShareFile("file1", "bob")
+	if err != nil {
+		t.Error("Failed to share the a file", err)
+		return
+	}
+	err = u2.ReceiveFile("file2", "alice", magic_string)
+	if err != nil {
+		t.Error("Failed to receive the share message", err)
+		return
+	}
+
+	toAppend := userlib.RandomBytes(1000)
+
+	err = u.AppendFile("file1", toAppend)
+	if err != nil {
+		t.Error(err)
+		return
+	}
+
+	file2, err = u2.LoadFile("file2")
+	if err != nil || file2 == nil {
+		t.Error("Failed to load a shared file")
+		return
+	}
+	if !reflect.DeepEqual(file2, append(file, toAppend...)) {
+		t.Error("Receiver cannot view edits to shared file.")
+	}
+
+	err = u.RevokeFile("file2", "bob")
+	if err == nil {
+		t.Error("Shouldnt revoke", err)
+		return
+	}
+
+	err = u.AppendFile("file2", toAppend)
+	if err == nil {
+		t.Error("Able to append to a revoked file")
+		return
+	}
+}
