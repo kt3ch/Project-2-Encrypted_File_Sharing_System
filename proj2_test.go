@@ -14,7 +14,7 @@ import (
 	_ "strconv"
 	"strings"
 	"testing"
-	"time"
+	_ "time"
 )
 
 func clear() {
@@ -303,9 +303,6 @@ func TestInitAndGetPt2 (t *testing.T) {
 func TestStoreAndShare(t *testing.T) {
 	userlib.SetDebugStatus(false)
 	clear()
-	datastore := userlib.DatastoreGetMap()
-	keystore := userlib.KeystoreGetMap()
-	_, _ = datastore, keystore
 
 	elise, err := InitUser("elise", "chips")
 	if err != nil {
@@ -317,7 +314,12 @@ func TestStoreAndShare(t *testing.T) {
 		t.Error("Could not initialize Elise")
 		return
 	}
-	randomContent := userlib.RandomBytes(userlib.AESBlockSize)
+	jay, err := InitUser("jay", "okinawa")
+	if err != nil {
+		t.Error("Could not initialize Jay")
+		return
+	}
+	randomContent := []byte("zzzzzzzzzz")
 	elise.StoreFile("fileA", randomContent)
 	eLoadFileA, err := elise.LoadFile("fileA")
 	_ = eLoadFileA
@@ -334,7 +336,143 @@ func TestStoreAndShare(t *testing.T) {
 	accessToken, err := elise.ShareFile("fileA", "ben")
 	err = ben.ReceiveFile("renamedFileA", "elise", accessToken)
 	if err != nil {
-		t.Error("Ben should be able to load this shared file")
+		t.Error("Ben should be able to receive this shared file")
+		return
+	}
+	jayErr := jay.ReceiveFile("renamedFileA", "elise", accessToken)
+	if jayErr == nil {
+		t.Error("Jay should not be able to receive this shared file")
+		return
+	}
+	bLoadFileA, benLoadErr = ben.LoadFile("renamedFileA")
+	if benLoadErr != nil {
+		t.Error("Ben should be able to load this file now")
+		return
+	}
+	jLoadFileA, jayLoadErr := jay.LoadFile("renamedFileA")
+	_ = jLoadFileA
+	if jayLoadErr == nil {
+		t.Error("Jay should not be able to load this file")
+		return
+	}
+	if !reflect.DeepEqual(randomContent, bLoadFileA) {
+		t.Error("The shared files are not equal")
+		return
+	}
+	err = elise.RevokeFile("fileA", "ben")
+	if err != nil {
+		t.Error("Unable to revoke file access")
+		return
+	}
+	bLoadFileA, benLoadErr = ben.LoadFile("renamedFileA")
+	if benLoadErr == nil {
+		t.Error("Ben should not be able to load this revoked file")
+		return
+	}
+	moreRandomContent := []byte("additional info")
+	err = elise.AppendFile("fileA", moreRandomContent)
+	if err != nil {
+		t.Error("Unable to append to file")
+		return
+	}
+	eEditedLoadFile, lastErr := elise.LoadFile("fileA")
+	_ = eEditedLoadFile
+	if lastErr != nil {
+		t.Error("Unable to load edited file")
+		return
+	}
+	bEditedLoadFile, lastErr1 := ben.LoadFile("renamedFileA")
+	_ = bEditedLoadFile
+	if lastErr1 == nil {
+		t.Error("Revoked file: Ben should not be able to load edited file")
+		return
+	}
+}
+func TestAppendAfterCorruption(t *testing.T) {
+	userlib.SetDebugStatus(false)
+	clear()
+	datastore := userlib.DatastoreGetMap()
+	keystore := userlib.KeystoreGetMap()
+	_, _ = datastore, keystore
+	elise, eliseErr := InitUser("elise", "chips")
+	if eliseErr != nil {
+		t.Error("Failed to initilize Elise")
+		return
+	}
+	randomContent := []byte("zzzzzzzzzz")
+	elise.StoreFile("fileA", randomContent)
+	eLoadFileA, loadErr := elise.LoadFile("fileA")
+	_ = eLoadFileA
+	if loadErr != nil {
+		t.Error("Elise should be able to load this file")
+		return
+	}
+	var key []userlib.UUID
+	var value [][]byte
+	for k, v := range datastore {
+		key = append(key, k)
+		value = append(value, v)
+	}
+	for i := 0; i < len(key); i++ {
+		userlib.DatastoreSet(key[i], value[0])
+	}
+	appendInfo := []byte("uc berkeley class of 2021")
+	err := elise.AppendFile("fileA", appendInfo)
+	if err == nil {
+		t.Error("File was corrupt but Elise was still able to append")
+		return
+	}
+}
+
+func TestCorruptAccessToken(t *testing.T) {
+	userlib.SetDebugStatus(false)
+	clear()
+	datastore := userlib.DatastoreGetMap()
+	keystore := userlib.KeystoreGetMap()
+	_, _ = datastore, keystore
+	elise, eliseErr := InitUser("elise", "chips")
+	if eliseErr != nil {
+		t.Error("Failed to initilize Elise")
+		return
+	}
+	ben, benErr := InitUser("ben", "chips")
+	if benErr != nil {
+		t.Error("Failed to initilize Ben")
+		return
+	}
+	randomStuff := []byte("cake or icecream")
+	elise.StoreFile("file1", randomStuff)
+	eLoadFileA, err := elise.LoadFile("file1")
+	_ = eLoadFileA
+	if err != nil {
+		t.Error("Elise should be able to load this file")
+		return
+	}
+	magicNumber, magicErr := elise.ShareFile("file1", "ben")
+	if magicErr != nil {
+		t.Error("Failed to share this file")
+		return
+	}
+	//modify magicNumber by one value
+	modifiedMagicNum := magicNumber[:(len(magicNumber)-1)] + "a"
+	recErr := ben.ReceiveFile("file1", "elise", modifiedMagicNum)
+	if recErr == nil {
+		t.Error("Received a corrupt file with incorrect access token")
+		return
+	}
+	//input empty string as access token
+	emptyToken := ""
+	recErr1 := ben.ReceiveFile("eliseShared", "elise", emptyToken)
+	if recErr1 == nil {
+		t.Error("Received a corrupt file with incorrect access token")
+		return
+	}
+	//input random access token
+	randomAccessTokenBytes := userlib.RandomBytes(len(magicNumber))
+	randomAccessToken := string(randomAccessTokenBytes)
+	recErr2 := ben.ReceiveFile("eliseShared", "elise", randomAccessToken)
+	if recErr2 == nil {
+		t.Error("Received a corrupt file with incorrect access token")
 		return
 	}
 }
@@ -344,97 +482,99 @@ func TestStoreAndShare(t *testing.T) {
 
 
 
+
+
 //
-//func TestStuffAfterRevoke(t *testing.T) {
-//	userlib.SetDebugStatus(false)
-//	userlib.DatastoreClear()
-//	userlib.KeystoreClear()
-//	datastore := userlib.DatastoreGetMap()
-//	keystore := userlib.KeystoreGetMap()
-//	_, _ = datastore, keystore
+// func TestStuffAfterRevoke(t *testing.T) {
+// 	userlib.SetDebugStatus(false)
+// 	userlib.DatastoreClear()
+// 	userlib.KeystoreClear()
+// 	datastore := userlib.DatastoreGetMap()
+// 	keystore := userlib.KeystoreGetMap()
+// 	_, _ = datastore, keystore
 //
-//	u, err := InitUser("alice", "fubar")
-//	if err != nil {
-//		t.Error("Failed to initialize alice", err)
-//		return
-//	}
-//	u2, err2 := InitUser("bob", "foobar")
-//	if err2 != nil {
-//		t.Error("Failed to initialize bob", err2)
-//		return
-//	}
+// 	u, err := InitUser("alice", "fubar")
+// 	if err != nil {
+// 		t.Error("Failed to initialize alice", err)
+// 		return
+// 	}
+// 	u2, err2 := InitUser("bob", "foobar")
+// 	if err2 != nil {
+// 		t.Error("Failed to initialize bob", err2)
+// 		return
+// 	}
 //
-//	file := userlib.RandomBytes(userlib.AESBlockSize)
-//	u.StoreFile("file1", file)
+// 	file := userlib.RandomBytes(userlib.AESBlockSize)
+// 	u.StoreFile("file1", file)
 //
-//	magic_string, err := u.ShareFile("file1", "bob")
-//	if err != nil {
-//		t.Error("Failed to share the a file", err)
-//		return
-//	}
-//	err = u2.ReceiveFile("file2", "alice", magic_string)
-//	if err != nil {
-//		t.Error("Failed to receive the share message", err)
-//		return
-//	}
+// 	magic_string, err := u.ShareFile("file1", "bob")
+// 	if err != nil {
+// 		t.Error("Failed to share the a file", err)
+// 		return
+// 	}
+// 	err = u2.ReceiveFile("file2", "alice", magic_string)
+// 	if err != nil {
+// 		t.Error("Failed to receive the share message", err)
+// 		return
+// 	}
 //
-//	v2, err := u2.LoadFile("file2")
-//	if err != nil {
-//		t.Error("Failed to download the file after sharing", err)
-//		return
-//	}
-//	if !reflect.DeepEqual(file, v2) {
-//		t.Error("Shared file is not the same", file, v2)
-//		return
-//	}
+// 	v2, err := u2.LoadFile("file2")
+// 	if err != nil {
+// 		t.Error("Failed to download the file after sharing", err)
+// 		return
+// 	}
+// 	if !reflect.DeepEqual(file, v2) {
+// 		t.Error("Shared file is not the same", file, v2)
+// 		return
+// 	}
 //
-//	err = u.RevokeFile("file1")
-//	if err != nil {
-//		t.Error("Revoke failed")
-//	}
+// 	err = u.RevokeFile("file1")
+// 	if err != nil {
+// 		t.Error("Revoke failed")
+// 	}
 //
-//	file2, err := u2.LoadFile("file2")
-//	if err != nil || reflect.DeepEqual(file2, file) {
-//		t.Error("Loaded a file that was revoked")
-//		return
-//	}
+// 	file2, err := u2.LoadFile("file2")
+// 	if err != nil || reflect.DeepEqual(file2, file) {
+// 		t.Error("Loaded a file that was revoked")
+// 		return
+// 	}
 //
-//	magic_string, err = u.ShareFile("file1", "bob")
-//	if err != nil {
-//		t.Error("Failed to share the a file", err)
-//		return
-//	}
-//	err = u2.ReceiveFile("file2", "alice", magic_string)
-//	if err != nil {
-//		t.Error("Failed to receive the share message", err)
-//		return
-//	}
+// 	magic_string, err = u.ShareFile("file1", "bob")
+// 	if err != nil {
+// 		t.Error("Failed to share the a file", err)
+// 		return
+// 	}
+// 	err = u2.ReceiveFile("file2", "alice", magic_string)
+// 	if err != nil {
+// 		t.Error("Failed to receive the share message", err)
+// 		return
+// 	}
 //
-//	toAppend := userlib.RandomBytes(userlib.AESBlockSize)
+// 	toAppend := userlib.RandomBytes(userlib.AESBlockSize)
 //
-//	err = u.AppendFile("file1", toAppend)
-//	if err != nil {
-//		t.Error(err)
-//		return
-//	}
+// 	err = u.AppendFile("file1", toAppend)
+// 	if err != nil {
+// 		t.Error(err)
+// 		return
+// 	}
 //
-//	file2, err = u2.LoadFile("file2")
-//	if err != nil || file2 == nil {
-//		t.Error("Failed to load a shared file")
-//		return
-//	}
-//	if !reflect.DeepEqual(file2, append(file, toAppend...)) {
-//		t.Error("Receiver cannot view edits to shared file.")
-//	}
+// 	file2, err = u2.LoadFile("file2")
+// 	if err != nil || file2 == nil {
+// 		t.Error("Failed to load a shared file")
+// 		return
+// 	}
+// 	if !reflect.DeepEqual(file2, append(file, toAppend...)) {
+// 		t.Error("Receiver cannot view edits to shared file.")
+// 	}
 //
-//	err = u.RevokeFile("file1")
-//	if err != nil {
-//		t.Error("Revoke failed")
-//	}
+// 	err = u.RevokeFile("file1")
+// 	if err != nil {
+// 		t.Error("Revoke failed")
+// 	}
 //
-//	err = u2.AppendFile("file2", toAppend)
-//	if err == nil {
-//		t.Error("Able to append to a revoked file")
-//		return
-//	}
-//}
+// 	err = u2.AppendFile("file2", toAppend)
+// 	if err == nil {
+// 		t.Error("Able to append to a revoked file")
+// 		return
+// 	}
+// }
