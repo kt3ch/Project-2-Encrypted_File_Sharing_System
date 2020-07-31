@@ -216,6 +216,12 @@ func TestShare(t *testing.T) {
 	}
 
 	magic_string, err = u.ShareFile("file1", "bob")
+	magic_string1, err1 := u.ShareFile("file1", "bob")
+	_ = magic_string1
+	if err1 != nil {
+		t.Error("This should be undefined behavior", err)
+		return
+	}
 	userlib.DebugMsg("Magic string: %d", len(magic_string))
 	if err != nil {
 		t.Error("Failed to share the file", err)
@@ -475,4 +481,199 @@ func TestCorruptAccessToken(t *testing.T) {
 		t.Error("Received a corrupt file with incorrect access token")
 		return
 	}
+}
+
+func TestTypoInShare(t *testing.T) {
+	userlib.SetDebugStatus(false)
+	clear()
+	datastore := userlib.DatastoreGetMap()
+	keystore := userlib.KeystoreGetMap()
+	_, _ = datastore, keystore
+	elise, eliseErr := InitUser("elise", "chips")
+	if eliseErr != nil {
+		t.Error("Failed to initilize Elise")
+		return
+	}
+	ben, benErr := InitUser("ben", "chips")
+	if benErr != nil {
+		t.Error("Failed to initilize Ben")
+		return
+	}
+	info := []byte("cs161.org")
+	elise.StoreFile("file1", info)
+	eLoadFileA, err := elise.LoadFile("file1")
+	_ = eLoadFileA
+	if err != nil {
+		t.Error("Elise should be able to load this file")
+		return
+	}
+	magicString, err := elise.ShareFile("file1", "ben")
+	//typo test #1 -- access token
+	err0 := ben.ReceiveFile("renamedFile1", "elise", "magicStringT")
+	if err0 == nil {
+		t.Error("Typo error")
+		return
+	}
+	//typo test #1 -- sender
+	err1 := ben.ReceiveFile("renamedFile1", "el0ise", magicString)
+	if err1 == nil {
+		t.Error("Typo error")
+		return
+	}
+	//typo test #1 -- recipient
+	magicString1, err2 := elise.ShareFile("file1", "bennnnnnn")
+	_ = magicString1
+	if err2 == nil {
+		t.Error("Typo error")
+		return
+	}
+}
+
+func TestEdgeCases(t *testing.T) {
+	userlib.SetDebugStatus(false)
+	clear()
+	datastore := userlib.DatastoreGetMap()
+	keystore := userlib.KeystoreGetMap()
+	_, _ = datastore, keystore
+	elise, eliseErr := InitUser("elise", "chips")
+	if eliseErr != nil {
+		t.Error("Failed to initilize Elise")
+		return
+	}
+	ben, benErr := InitUser("ben", "chips")
+	if benErr != nil {
+		t.Error("Failed to initilize Ben")
+		return
+	}
+	jay, jayErr := InitUser("jay", "chips")
+	_ = jay
+	if jayErr != nil {
+		t.Error("Failed to initilize Jay")
+		return
+	}
+	romeo := []byte("O Romeo, Romeo, wherefore art thou Romeo?")
+	elise.StoreFile("file1", romeo)
+	eLoadFileA, err := elise.LoadFile("file1")
+	_ = eLoadFileA
+	if err != nil {
+		t.Error("Elise should be able to load this file")
+		return
+	}
+	magicString, err := elise.ShareFile("file1", "ben")
+	if err != nil {
+		t.Error("Sharing error")
+		return
+	}
+	err0 := ben.ReceiveFile("renamedFile1", "elise", magicString)
+	if err0 != nil {
+		t.Error("Ben should be able to receive this file")
+		return
+	}
+	magicString1, err1 := ben.ShareFile("renamedFile1", "ben")
+	_ = magicString1
+	if err1 != nil {
+		t.Error("This should be undefined behavior")
+		return
+	}
+	magicString2, err2 := ben.ShareFile("renamedFile1", "jay")
+	_ = magicString2
+	if err2 != nil {
+		t.Error("Sharing error")
+		return
+	}
+	err3 := jay.ReceiveFile("renamedFile1", "elise", magicString2)
+	if err3 == nil {
+		t.Error("Wrong sender")
+		return
+	}
+	err4 := jay.ReceiveFile("file1", "elise", magicString)
+	if err4 == nil {
+		t.Error("Wrong sender")
+		return
+	}
+	err5 := jay.ReceiveFile("fromBen", "ben", magicString2)
+	if err5 != nil {
+		t.Error("Jay should be able to receive this file")
+		return
+	}
+	//append tests
+	extraStuff := []byte("Human beings can be very odd sometimes.")
+	updatedFile := append(romeo, extraStuff...)
+	err = elise.AppendFile("file1", extraStuff)
+	if err != nil {
+		t.Error("Append error")
+		return
+	}
+	updatedLoad, loadErr := elise.LoadFile("file1")
+	if !reflect.DeepEqual(updatedLoad, updatedFile) || loadErr != nil {
+		t.Error("Files not updated")
+		return
+	}
+	updatedLoad1, loadErr1 := ben.LoadFile("renamedFile1")
+	if !reflect.DeepEqual(updatedLoad1, updatedFile) || loadErr1 != nil {
+		t.Error("Files not updated")
+		return
+	}
+	// updatedLoad2, loadErr2 := jay.LoadFile("fromBen")
+	// if !reflect.DeepEqual(updatedLoad2, updatedFile) || loadErr2 != nil {
+	// 	t.Error("Files not updated")
+	// 	return
+	// }
+}
+func TestEdgeCasesRevoke(t *testing.T) {
+	userlib.SetDebugStatus(false)
+	clear()
+	datastore := userlib.DatastoreGetMap()
+	keystore := userlib.KeystoreGetMap()
+	_, _ = datastore, keystore
+	elise, eliseErr := InitUser("elise", "chips")
+	if eliseErr != nil {
+		t.Error("Failed to initilize Elise")
+		return
+	}
+	ben, benErr := InitUser("ben", "chips")
+	if benErr != nil {
+		t.Error("Failed to initilize Ben")
+		return
+	}
+	jay, jayErr := InitUser("jay", "chips")
+	_ = jay
+	if jayErr != nil {
+		t.Error("Failed to initilize Jay")
+		return
+	}
+	romeo := []byte("O Romeo, Romeo, wherefore art thou Romeo?")
+	elise.StoreFile("file1", romeo)
+	eLoadFileA, err := elise.LoadFile("file1")
+	_ = eLoadFileA
+	if err != nil {
+		t.Error("Elise should be able to load this file")
+		return
+	}
+	magicString, err := elise.ShareFile("file1", "ben")
+	if err != nil {
+		t.Error("Sharing error")
+		return
+	}
+	err0 := ben.ReceiveFile("renamedFile1", "elise", magicString)
+	if err0 != nil {
+		t.Error("Ben should be able to receive this file")
+		return
+	}
+	revokeErr := elise.RevokeFile("file1", "ben")
+	if revokeErr != nil {
+		t.Error("Failed to revoke file access")
+		return
+	}
+	bLoadFileA, err := ben.LoadFile("renamedFile1")
+	_ = bLoadFileA
+	if err == nil {
+		t.Error("Revoked file access: Ben should not be able to load this file")
+		return
+	}
+	
+
+
+
+
 }
